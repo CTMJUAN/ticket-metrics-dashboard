@@ -9,7 +9,7 @@ A single-file HTML dashboard for ticket export CSVs. Open `ticket-dashboard.html
 - Light and dark themes
 
 ## Versions
-Each release is a commit on `main`, tagged `vX.Y`. The file name stays the same; use the history or tags to compare or roll back.
+Each version is one commit on `main` whose message starts with its version number (e.g. `v2.9 — …`). The file name stays the same; use the commit history to compare versions or roll back.
 
 | Version | Changes |
 |---|---|
