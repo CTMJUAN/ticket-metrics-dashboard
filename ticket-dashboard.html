@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ticket Metrics Dashboard</title>
+<style>
+:root{
+  --bg:#f7f8fa; --card:#ffffff; --text:#1a1d23; --sub:#5b6270;
+  --accent:#4f6df5; --border:#e3e6ea; --warn:#b45309; --pieOther:#b8bec8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#12141a; --card:#1c1f27; --text:#eef0f3; --sub:#9aa1ae; --accent:#7c93ff; --border:#2c2f3a; --warn:#f59e0b; --pieOther:#4a5060; }
+}
+:root[data-theme="dark"]{ --bg:#12141a; --card:#1c1f27; --text:#eef0f3; --sub:#9aa1ae; --accent:#7c93ff; --border:#2c2f3a; --warn:#f59e0b; --pieOther:#4a5060; }
+html{background:var(--bg);scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  max-width:1100px;margin:0 auto;
+  padding:calc(20px + env(safe-area-inset-top,0px)) 20px calc(20px + env(safe-area-inset-bottom,0px));}
+body.noScroll{overflow:hidden;}
+h1{font-size:1.4rem;margin:8px 0 4px;}
+.sub{color:var(--sub);font-size:.9rem;}
+p.sub{margin:0 0 20px;}
+.dropzone{display:block;border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;color:var(--sub);cursor:pointer;transition:.15s;}
+.dropzone:hover,.dropzone.dragging{border-color:var(--accent);color:var(--text);}
+.dropzone input{display:none;}
+#fileList{font-size:.8rem;color:var(--sub);margin-top:8px;word-break:break-word;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.card .label{font-size:.75rem;color:var(--sub);text-transform:uppercase;letter-spacing:.03em;}
+.card .value{font-size:1.5rem;font-weight:600;margin-top:4px;}
+.section{margin:28px 0;}
+.section h2{font-size:1rem;margin:0 0 10px;color:var(--text);}
+.chartRow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:stretch;}
+.chartCard{display:flex;flex-direction:column;min-width:0;}
+.chartCard h2{font-size:1rem;margin:0 0 10px;}
+.chartCard .chartWrap{flex:1;display:flex;flex-direction:column;justify-content:center;}
+.pieWrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap;justify-content:center;}
+.pie{width:170px;height:170px;flex:none;}
+.pieSlice{stroke:var(--card);stroke-width:2;}
+svg text.pieLabel{fill:#fff;font-size:13px;font-weight:600;}
+.pieLegend{list-style:none;margin:0;padding:0;flex:1;min-width:170px;font-size:.82rem;}
+.pieLegend li{display:flex;align-items:center;gap:8px;padding:4px 0;}
+.pieLegend .dot{width:10px;height:10px;flex:none;}
+.pieName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pieVal{color:var(--sub);white-space:nowrap;}
+.autoBox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px;}
+.autoLabel{display:inline-flex;align-items:center;gap:8px;font-size:.88rem;cursor:pointer;}
+.autoInput{font-size:.85rem;border-radius:8px;padding:5px 8px;border:1px solid var(--border);background:var(--bg);color:var(--text);color-scheme:light dark;}
+.dayChip{display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:5px 8px;border:1px solid var(--border);border-radius:999px;font-size:.78rem;cursor:pointer;color:var(--sub);user-select:none;}
+.dayChip input{position:absolute;opacity:0;pointer-events:none;}
+.dayChip:has(input:checked){background:var(--accent);border-color:var(--accent);color:#fff;}
+.dayChip:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px;}
+.tag{display:inline-block;font-size:.7rem;padding:1px 7px;border-radius:999px;border:1px solid var(--border);color:var(--sub);}
+.tag.auto{border-color:var(--accent);color:var(--accent);}
+.rating{display:inline-block;min-width:34px;text-align:center;font-weight:600;font-size:.78rem;padding:2px 6px;border-radius:6px;margin-right:8px;}
+.rating.low{background:rgba(239,68,68,.15);color:#dc2626;}
+.rating.mid{background:rgba(245,158,11,.18);color:#b45309;}
+.rating.high{background:rgba(52,211,153,.18);color:#059669;}
+:root[data-theme="dark"] .rating.low{color:#f87171;} :root[data-theme="dark"] .rating.mid{color:#fbbf24;} :root[data-theme="dark"] .rating.high{color:#34d399;}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .rating.low{color:#f87171;} :root:not([data-theme="light"]) .rating.mid{color:#fbbf24;} :root:not([data-theme="light"]) .rating.high{color:#34d399;} }
+.pips{display:inline-flex;gap:3px;vertical-align:middle;}
+.pip{width:8px;height:8px;border-radius:50%;background:var(--border);}
+.pip.on{background:var(--accent);}
+.ratingRange{color:var(--sub);font-size:.75rem;margin-left:6px;}
+.ratingNone{color:var(--sub);}
+.chartWrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;}
+.tableWrap{overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:12px;background:var(--card);}
+table{border-collapse:collapse;width:100%;font-size:.82rem;min-width:480px;}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+th{color:var(--sub);font-weight:600;position:sticky;top:0;background:var(--card);}
+.empty{color:var(--sub);font-size:.85rem;padding:20px 0;}
+.warn{color:var(--warn);}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center;}
+button{font-size:.85rem;border-radius:8px;padding:7px 14px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);}
+button:disabled{opacity:.5;cursor:not-allowed;}
+.btnPrimary{background:var(--accent);color:#fff;border:none;}
+.btnGhost{background:transparent;color:var(--sub);}
+svg text{fill:var(--text);font-size:11px;}
+svg .sub-text{fill:var(--sub);}
+svg .bar{fill:var(--accent);}
+svg .grid-line{stroke:var(--border);stroke-width:1;}
+svg .line-tickets{stroke:#4f6df5;fill:none;stroke-width:2;}
+svg .line-hours{stroke:#34d399;fill:none;stroke-width:2;}
+.legend{display:flex;gap:16px;font-size:.78rem;color:var(--sub);margin-top:8px;}
+.legend span{display:inline-flex;align-items:center;gap:6px;}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.settingsOverlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;justify-content:flex-end;z-index:100;}
+.settingsPanel{background:var(--bg);width:min(560px,100%);height:100%;overflow-y:auto;padding:20px;padding-top:calc(20px + env(safe-area-inset-top,0px));padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));box-shadow:-8px 0 24px rgba(0,0,0,.15);}
+.settingsHeader{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:4px;}
+@media (max-width:600px){.settingsPanel{width:100%;} body{padding-left:16px;padding-right:16px;}}
+</style>
+</head>
+<body>
+<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+  <h1>🎫 Ticket Metrics Dashboard</h1>
+  <button id="settingsBtn" class="btnGhost" style="margin-top:8px;">⚙ Settings</button>
+</div>
+<p id="dataSourceSummary" class="sub"></p>
+
+<div id="output"></div>
+
+<!-- Settings overlay: synced folder, manual upload, data preview, theme and log live here to keep the front page uncluttered -->
+<div id="settingsOverlay" class="settingsOverlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="settingsPanel">
+    <div class="settingsHeader">
+      <h2 id="settingsTitle" style="margin:0;font-size:1.1rem;">Settings</h2>
+      <button id="settingsCloseBtn" class="btnGhost" aria-label="Close settings">✕</button>
+    </div>
+
+    <div class="section" style="margin-top:0;">
+      <h2>Appearance</h2>
+      <div class="controls">
+        <button id="themeToggle" class="btnGhost">🌙 Dark mode</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Synced folder (automatic)</h2>
+      <p class="sub" style="margin-top:-6px;">Point this at your local OneDrive/SharePoint-synced folder once, and it reads every .csv in it (including up to three levels of subfolders, e.g. per-agent folders) directly off disk — no uploading, no network request. Needs Chrome or Edge on desktop.</p>
+      <div class="controls">
+        <button id="connectFolderBtn" class="btnPrimary">Connect synced folder…</button>
+        <button id="reconnectFolderBtn" class="btnPrimary" style="display:none;">Reconnect folder…</button>
+        <button id="refreshFolderBtn" class="btnGhost" style="display:none;">Refresh now</button>
+        <button id="disconnectFolderBtn" class="btnGhost" style="display:none;">Disconnect</button>
+      </div>
+      <div class="controls">
+        <label for="refreshRate" class="sub" style="font-size:.85rem;">Check for changes</label>
+        <select id="refreshRate" style="font-size:.85rem;border-radius:8px;padding:6px 10px;border:1px solid var(--border);background:var(--card);color:var(--text);">
+          <option value="30000">every 30 seconds</option>
+          <option value="60000">every minute</option>
+          <option value="120000">every 2 minutes</option>
+          <option value="300000">every 5 minutes</option>
+          <option value="900000">every 15 minutes</option>
+          <option value="1800000">every 30 minutes</option>
+          <option value="0">only when I click Refresh</option>
+        </select>
+      </div>
+      <div id="folderStatus" class="sub" style="margin-top:4px;">Checking for a previously connected folder…</div>
+      <div id="lastSync" class="sub" style="margin-top:2px;"></div>
+      <div id="folderDiag" class="sub" style="margin-top:2px;font-size:.82rem;"></div>
+    </div>
+
+    <div class="section">
+      <h2>Or upload manually</h2>
+      <p class="sub" style="margin-top:-6px;">Add one or more ticket export CSVs by hand; they're combined with each other and with any synced-folder data into one view. Re-adding a file with the same name replaces the earlier copy.</p>
+      <label class="dropzone" id="dropzone">
+        <div>Click to add CSV file(s), or drag &amp; drop here — you can add more anytime</div>
+        <input type="file" id="fileInput" accept=".csv,text/csv" multiple>
+      </label>
+      <div class="controls" style="margin-top:10px;">
+        <button id="clearManualBtn" class="btnGhost" disabled>Remove uploaded files</button>
+      </div>
+      <div id="fileList"></div>
+    </div>
+
+    <div class="section">
+      <h2>Data preview (first 50 rows)</h2>
+      <p class="sub" style="margin-top:-6px;">The raw rows behind the dashboard, after non-Finished and duplicate rows are removed.</p>
+      <div id="previewWrap"><p class="empty">No data loaded yet.</p></div>
+    </div>
+
+    <div class="section">
+      <h2>Metrics log over time</h2>
+      <p class="sub" style="margin-top:-6px;">Saves a timestamped snapshot of the current totals in this browser, so you can track trends across uploads (e.g. daily exports).</p>
+      <div class="controls">
+        <button id="logBtn" class="btnPrimary" disabled>Log this snapshot</button>
+        <button id="downloadLogBtn" class="btnGhost">Download log as CSV</button>
+        <button id="clearLogBtn" class="btnGhost">Clear log</button>
+      </div>
+      <div class="autoBox">
+        <div class="controls" style="margin-bottom:6px;">
+          <label class="autoLabel"><input type="checkbox" id="autoEnabled"> Log a snapshot automatically at</label>
+          <input type="time" id="autoTime" value="17:00" class="autoInput" aria-label="Automatic snapshot time">
+        </div>
+        <div class="controls" id="autoDays" role="group" aria-label="Days to take automatic snapshots" style="margin-bottom:6px;"></div>
+        <div id="autoStatus" class="sub" style="font-size:.82rem;"></div>
+      </div>
+      <div id="logWrap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ======================================================================
+   App state — declared first so nothing below can touch it before it exists.
+   Each data source keeps its own raw, untouched rows; the combined, filtered
+   view is rebuilt from scratch every time either source changes.
+   ====================================================================== */
+const sources = {
+  folder: { files: [], rows: [] },   // replaced wholesale on each folder scan
+  manual: { files: [], rows: [], rowsByFile: new Map() }    // accumulates manual uploads
+};
+let rows = [];          // combined view after filtering + de-duplication
+const durSec = new WeakMap(); // row -> seconds, kept off the row objects themselves
+
+const $ = id => document.getElementById(id);
+
+/* ---------- HTML escaping (every value from a CSV goes through this) ---------- */
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------- CSV parsing (no external library) ---------- */
+function detectDelimiter(text){
+  // look at the header line only, ignoring anything inside quotes
+  let line = '', inQ = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (c === '"') inQ = !inQ;
+    else if (!inQ && (c === '\n' || c === '\r')) break;
+    else if (!inQ) line += c;
+  }
+  const counts = { ',': 0, ';': 0, '\t': 0 };
+  for (const c of line) if (c in counts) counts[c]++;
+  let best = ',';
+  for (const d of [';', '\t']) if (counts[d] > counts[best]) best = d;
+  return best;
+}
+
+function parseCSV(text){
+  text = String(text).replace(/^﻿/, '');          // Excel's UTF-8 byte-order mark
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const delim = detectDelimiter(text);
+  const table = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQuotes){
+      if (c === '"'){
+        if (text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === delim){ row.push(field); field = ''; }
+      else if (c === '\n'){ row.push(field); table.push(row); row = []; field = ''; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length){ row.push(field); table.push(row); }
+  if (!table.length) return [];
+
+  // clean headers: trim, name blanks, make duplicates unique so no column is silently overwritten
+  const seen = {};
+  const headers = table[0].map((h, i) => {
+    let name = String(h).trim() || `Column ${i + 1}`;
+    if (seen[name]){ seen[name]++; name = `${name} (${seen[name]})`; } else seen[name] = 1;
+    return name;
+  });
+
+  const out = [];
+  for (let r = 1; r < table.length; r++){
+    const cells = table[r];
+    if (cells.every(v => String(v).trim() === '')) continue; // blank / ",,,," lines
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = cells[idx] !== undefined ? cells[idx] : ''; });
+    out.push(obj);
+  }
+  return out;
+}
+
+/* ---------- tiny SVG chart helpers (no external library) ---------- */
+function truncate(s, max){ s = String(s); return s.length > max ? s.slice(0, max - 1) + '…' : s; }
+
+function hBarChartSVG(entries, opts){
+  opts = opts || {};
+  const width = opts.width || 600, barHeight = 26, gap = 10, leftLabelWidth = opts.leftLabelWidth || 160;
+  if (!entries.length) return '<p class="empty">Nothing to show.</p>';
+  const maxVal = entries.reduce((m, e) => Math.max(m, e.value), 1);
+  const chartWidth = width - leftLabelWidth - 60;
+  const height = entries.length * (barHeight + gap) + gap;
+  const maxChars = Math.max(6, Math.floor((leftLabelWidth - 14) / 6.2));
+  let svg = `<svg viewBox="0 0 ${width} ${height}" width="100%" xmlns="http://www.w3.org/2000/svg" role="img">`;
+  entries.forEach((e, i) => {
+    const y = gap + i * (barHeight + gap);
+    const w = Math.max(2, (e.value / maxVal) * chartWidth);
+    svg += `<text x="${leftLabelWidth - 10}" y="${y + barHeight/2 + 4}" text-anchor="end"><title>${esc(e.label)}</title>${esc(truncate(e.label, maxChars))}</text>`;
+    svg += `<rect class="bar" x="${leftLabelWidth}" y="${y}" width="${w}" height="${barHeight}" rx="4"></rect>`;
+    svg += `<text x="${leftLabelWidth + w + 8}" y="${y + barHeight/2 + 4}">${e.value.toLocaleString()}</text>`;
+  });
+  return svg + `</svg>`;
+}
+
+const PIE_COLORS = ['#4f6df5', '#34d399', '#f59e0b', '#ef4444', '#a855f7'];
+function pieChartHTML(slices){
+  const total = slices.reduce((n, s) => n + s.value, 0);
+  if (!total) return '<p class="empty">Nothing to show.</p>';
+  const cx = 100, cy = 100, r = 92;
+  const color = (s, i) => s.other ? 'var(--pieOther)' : PIE_COLORS[i % PIE_COLORS.length];
+  const pct = v => (v / total * 100);
+  const fmtPct = v => { const p = pct(v); return (p < 1 && p > 0 ? '<1' : Math.round(p)) + '%'; };
+  let svg = `<svg viewBox="0 0 200 200" class="pie" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pie chart of tickets by customer">`;
+  if (slices.length === 1){
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" style="fill:${color(slices[0],0)}"><title>${esc(slices[0].label)}: ${slices[0].value} (100%)</title></circle>`;
+  } else {
+    let angle = -Math.PI / 2; // start at 12 o'clock
+    slices.forEach((s, i) => {
+      const sweep = s.value / total * Math.PI * 2;
+      const a2 = angle + sweep;
+      const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+      const x2 = cx + r * Math.cos(a2),    y2 = cy + r * Math.sin(a2);
+      const large = sweep > Math.PI ? 1 : 0;
+      svg += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" style="fill:${color(s,i)}" class="pieSlice"><title>${esc(s.label)}: ${s.value.toLocaleString()} (${fmtPct(s.value)})</title></path>`;
+      angle = a2;
+    });
+  }
+  // percentage labels on slices big enough to hold them
+  let angle = -Math.PI / 2;
+  slices.forEach(s => {
+    const sweep = s.value / total * Math.PI * 2;
+    if (sweep > 0.45){
+      const mid = angle + sweep / 2, lr = slices.length === 1 ? 0 : r * 0.62;
+      svg += `<text x="${(cx + lr*Math.cos(mid)).toFixed(1)}" y="${(cy + lr*Math.sin(mid) + 4).toFixed(1)}" text-anchor="middle" class="pieLabel">${fmtPct(s.value)}</text>`;
+    }
+    angle += sweep;
+  });
+  svg += '</svg>';
+  const legend = slices.map((s, i) => `<li><span class="dot" style="background:${color(s,i)}"></span><span class="pieName" title="${esc(s.label)}">${esc(s.label)}</span><span class="pieVal">${s.value.toLocaleString()} · ${fmtPct(s.value)}</span></li>`).join('');
+  return `<div class="pieWrap">${svg}<ul class="pieLegend">${legend}</ul></div>`;
+}
+
+function lineChartSVG(labels, seriesList, opts){
+  opts = opts || {};
+  const width = opts.width || 600, height = opts.height || 220;
+  const padL = 40, padR = 30, padT = 10, padB = 24;
+  const plotW = width - padL - padR, plotH = height - padT - padB;
+  const n = labels.length;
+  let maxVal = 1;
+  seriesList.forEach(s => s.values.forEach(v => { if (isFinite(v) && v > maxVal) maxVal = v; }));
+  const x = i => n <= 1 ? padL + plotW/2 : padL + (i/(n-1)) * plotW;
+  const y = v => padT + plotH - ((isFinite(v) ? v : 0) / maxVal) * plotH;
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" width="100%" xmlns="http://www.w3.org/2000/svg" role="img">`;
+  for (let g = 0; g <= 4; g++){
+    const gy = padT + (plotH / 4) * g;
+    svg += `<line class="grid-line" x1="${padL}" y1="${gy}" x2="${width-padR}" y2="${gy}"></line>`;
+    svg += `<text class="sub-text" x="${padL - 6}" y="${gy + 4}" text-anchor="end">${Math.round(maxVal * (1 - g/4)).toLocaleString()}</text>`;
+  }
+  seriesList.forEach(s => {
+    if (n === 1){
+      svg += `<circle cx="${x(0)}" cy="${y(s.values[0])}" r="4" fill="${s.color || 'var(--accent)'}"></circle>`;
+    } else {
+      const pts = s.values.map((v,i) => `${x(i)},${y(v)}`).join(' ');
+      svg += `<polyline class="${s.cls}" points="${pts}"></polyline>`;
+    }
+  });
+  const idxs = n <= 1 ? [0] : [...new Set([0, Math.floor((n-1)/2), n-1])];
+  idxs.forEach((i, k) => {
+    if (labels[i] === undefined) return;
+    const anchor = n <= 1 ? 'middle' : (k === 0 ? 'start' : (i === n-1 ? 'end' : 'middle'));
+    svg += `<text class="sub-text" x="${x(i)}" y="${height-6}" text-anchor="${anchor}">${esc(labels[i])}</text>`;
+  });
+  return svg + `</svg>`;
+}
+
+/* ---------- theme toggle ---------- */
+const THEME_KEY = 'ticketDashboardTheme';
+const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+function getSavedTheme(){ try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; } }
+function isCurrentlyDark(theme){ return theme === 'dark' || (!theme && !!(darkQuery && darkQuery.matches)); }
+function applyTheme(theme){
+  if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
+  $('themeToggle').textContent = isCurrentlyDark(theme) ? '☀️ Light mode' : '🌙 Dark mode';
+}
+function toggleTheme(){
+  const next = isCurrentlyDark(getSavedTheme()) ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  applyTheme(next);
+}
+applyTheme(getSavedTheme());
+$('themeToggle').addEventListener('click', toggleTheme);
+// keep the button label right if the OS switches light/dark while the page is open
+if (darkQuery){
+  const onSystemChange = () => applyTheme(getSavedTheme());
+  if (darkQuery.addEventListener) darkQuery.addEventListener('change', onSystemChange);
+  else if (darkQuery.addListener) darkQuery.addListener(onSystemChange);
+}
+
+/* ---------- settings panel ---------- */
+function openSettings(){
+  $('settingsOverlay').style.display = 'flex';
+  document.body.classList.add('noScroll');
+  $('settingsCloseBtn').focus();
+}
+function closeSettings(){
+  $('settingsOverlay').style.display = 'none';
+  document.body.classList.remove('noScroll');
+}
+$('settingsBtn').addEventListener('click', openSettings);
+$('settingsCloseBtn').addEventListener('click', closeSettings);
+$('settingsOverlay').addEventListener('click', e => { if (e.target.id === 'settingsOverlay') closeSettings(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('settingsOverlay').style.display !== 'none') closeSettings();
+});
+// the summary line is rebuilt with innerHTML, so its "Settings" link is handled by delegation
+$('dataSourceSummary').addEventListener('click', e => {
+  if (e.target.closest('[data-open-settings]')){ e.preventDefault(); openSettings(); }
+});
+
+/* ---------- local folder sync (File System Access API) ----------
+   Reads CSVs straight off disk from a local synced folder (e.g. OneDrive/
+   SharePoint sync client). Plain local filesystem access the browser grants;
+   no network request of any kind. Chrome/Edge desktop only. */
+const FS_DB_NAME = 'ticketDashboardFSDB';
+const FS_DB_STORE = 'handles';
+const FOLDER_HANDLE_KEY = 'syncFolder';
+const REFRESH_KEY = 'ticketDashboardRefreshMs';
+const DEFAULT_REFRESH_MS = 5 * 60 * 1000;
+function getRefreshMs(){
+  let v = null;
+  try { v = localStorage.getItem(REFRESH_KEY); } catch (e) {}
+  const n = Number(v);
+  return v !== null && isFinite(n) && n >= 0 ? n : DEFAULT_REFRESH_MS;
+}
+function refreshLabel(ms){
+  if (!ms) return 'refreshes only when you click Refresh now';
+  if (ms < 60000) return `checking for changes every ${ms/1000} seconds`;
+  const m = ms / 60000;
+  return `checking for changes every ${m === 1 ? 'minute' : m + ' minutes'}`;
+}
+let lastScanAt = 0;      // when the last scan finished
+let lastFolderSig = '';  // fingerprint of the files last loaded, to skip unchanged rescans
+const SCAN_DEPTH = 3; // root + up to 3 levels of subfolders
+
+let dbPromise = null; // one shared connection instead of opening a new one per call
+function idbOpen(){
+  if (!dbPromise){
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(FS_DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(FS_DB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }).catch(e => { dbPromise = null; throw e; });
+  }
+  return dbPromise;
+}
+async function idbSet(key, val){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FS_DB_STORE, 'readwrite');
+    tx.objectStore(FS_DB_STORE).put(val, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function idbGet(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FS_DB_STORE, 'readonly');
+    const req = tx.objectStore(FS_DB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+let syncFolderHandle = null;
+let autoRefreshTimer = null;
+let scanInProgress = null; // the running scan, so overlapping triggers share it
+const fsSupported = typeof window.showDirectoryPicker === 'function';
+
+function setFolderUI(state, message){
+  const btn = { connect: $('connectFolderBtn'), reconnect: $('reconnectFolderBtn'), refresh: $('refreshFolderBtn'), disconnect: $('disconnectFolderBtn') };
+  Object.values(btn).forEach(b => { b.style.display = 'none'; });
+  const status = $('folderStatus');
+  const name = syncFolderHandle ? syncFolderHandle.name : '';
+
+  if (state === 'unsupported'){
+    status.textContent = 'Folder sync needs Chrome or Edge on desktop — use manual upload below instead.';
+  } else if (state === 'connected'){
+    status.textContent = message || `Connected to "${name}" — ${refreshLabel(getRefreshMs())}.`;
+    btn.refresh.style.display = btn.disconnect.style.display = '';
+  } else if (state === 'scanning'){
+    status.textContent = `Scanning "${name}"…`;
+    btn.disconnect.style.display = '';
+  } else if (state === 'needs-permission'){
+    status.textContent = `Previously connected to "${name}" — click Reconnect to re-grant access (your browser asks again each session).`;
+    btn.reconnect.style.display = btn.disconnect.style.display = '';
+  } else if (state === 'error'){
+    status.textContent = message || 'Could not access the folder. Try reconnecting.';
+    btn.reconnect.style.display = btn.disconnect.style.display = '';
+  } else {
+    status.textContent = message || 'Not connected — connect a synced folder for automatic updates, or upload files manually below.';
+    btn.connect.style.display = '';
+  }
+}
+
+// Walks the folder and records everything it sees (not just CSVs), so when no
+// CSVs turn up the dashboard can show what the browser actually saw.
+async function collectCsvHandles(dirHandle, depth, path, diag, out){
+  try {
+    for await (const [name, handle] of dirHandle.entries()){
+      const rel = path ? `${path}/${name}` : name;
+      diag.seen.push({ path: rel, kind: handle.kind });
+      if (handle.kind === 'file' && /\.csv\s*$/i.test(name)){
+        out.push({ handle, path: rel });
+      } else if (handle.kind === 'directory'){
+        if (depth > 0) await collectCsvHandles(handle, depth - 1, rel, diag, out);
+        else diag.tooDeep.push(rel);
+      }
+    }
+  } catch (e) {
+    if (!path) throw e; // can't read the connected folder itself — that's a real error, not a partial result
+    diag.unreadableDirs.push(`${path}: ${e.message}`);
+  }
+  return out;
+}
+
+function renderFolderDiag(diag, csvCount){
+  const box = $('folderDiag');
+  if (!diag){ box.innerHTML = ''; return; }
+  const lines = [];
+  if (csvCount === 0){
+    if (!diag.seen.length){
+      lines.push('<strong>The browser sees this folder as empty.</strong> If the files show up in your file manager or on SharePoint, they most likely haven\'t been downloaded to this computer yet (online-only / not synced), or the browser was handed a sandboxed copy of the folder rather than the real one.');
+    } else {
+      lines.push(`<strong>No .csv files found.</strong> Here is what the browser can see (${diag.seen.length} item(s)):`);
+      const list = diag.seen.slice(0, 60).map(s => `<li>${esc(s.path)}${s.kind === 'directory' ? '/' : ''}</li>`).join('');
+      lines.push(`<ul style="margin:4px 0 0 18px;padding:0;">${list}${diag.seen.length > 60 ? '<li>…</li>' : ''}</ul>`);
+      lines.push('If your exports appear above with a different extension (e.g. .xlsx), save them as CSV. If they don\'t appear at all, they\'re in a different folder or haven\'t synced to this computer yet.');
+    }
+  }
+  if (diag.tooDeep.length) lines.push(`Skipped ${diag.tooDeep.length} folder(s) nested more than ${SCAN_DEPTH} levels deep: ${diag.tooDeep.slice(0,5).map(esc).join(', ')}${diag.tooDeep.length > 5 ? '…' : ''}`);
+  if (diag.unreadableDirs.length) lines.push(`Couldn't list: ${diag.unreadableDirs.map(esc).join('; ')}`);
+  if (diag.unreadableFiles.length) lines.push(`Found but couldn't open (often online-only files that haven't downloaded): ${diag.unreadableFiles.map(esc).join('; ')}`);
+  box.innerHTML = lines.map(l => `<div style="margin-top:6px;">${l}</div>`).join('');
+}
+
+function scanFolder(){
+  if (!syncFolderHandle) return Promise.resolve();
+  if (scanInProgress) return scanInProgress; // auto-refresh + click at the same time → one scan
+  scanInProgress = doScan().finally(() => { scanInProgress = null; });
+  return scanInProgress;
+}
+
+async function doScan(){
+  const handle = syncFolderHandle;
+  if ($('refreshFolderBtn').style.display === 'none') setFolderUI('scanning'); // first scan only; later checks run quietly
+  const diag = { seen: [], tooDeep: [], unreadableDirs: [], unreadableFiles: [] };
+  try {
+    const found = await collectCsvHandles(handle, SCAN_DEPTH, '', diag, []);
+    // open each file's metadata first (cheap); only re-read contents if something changed
+    const opened = [];
+    for (const { handle: fh, path } of found){
+      try { opened.push({ path, file: await fh.getFile() }); }
+      catch (e) { diag.unreadableFiles.push(`${path} (${e.message})`); }
+    }
+    const sig = opened.map(o => `${o.path}|${o.file.size}|${o.file.lastModified}`).sort().join('\n') + '#' + diag.unreadableFiles.join('|');
+    if (sig === lastFolderSig && handle === syncFolderHandle){
+      lastScanAt = Date.now();
+      setFolderUI('connected');
+      $('lastSync').textContent = `Last checked: ${new Date().toLocaleTimeString()} — no changes (${found.length} .csv file(s)).`;
+      return;
+    }
+    const newRows = [], newFiles = [];
+    for (const { path, file } of opened){
+      let text;
+      try { text = await file.text(); }
+      catch (e) { diag.unreadableFiles.push(`${path} (${e.message})`); continue; }
+      const parsed = parseCSV(text);
+      for (const r of parsed) newRows.push(r); // a loop, not push(...parsed): spreading 100k+ rows overflows the stack
+      newFiles.push({ name: path, count: parsed.length, source: 'folder' });
+    }
+    if (handle !== syncFolderHandle) return; // disconnected or switched folders mid-scan — drop stale results
+    sources.folder = { files: newFiles, rows: newRows };
+    lastFolderSig = sig;
+    lastScanAt = Date.now();
+    rebuild();
+    setFolderUI('connected');
+    $('lastSync').textContent = `Last synced: ${new Date().toLocaleTimeString()} — ${found.length} .csv file(s) found${diag.unreadableFiles.length ? `, ${diag.unreadableFiles.length} couldn't be opened` : ''}.`;
+    renderFolderDiag(diag, found.length);
+  } catch (e) {
+    if (handle !== syncFolderHandle) return;
+    if (e && e.name === 'NotAllowedError'){
+      stopAutoRefresh();
+      setFolderUI('needs-permission');
+    } else if (e && e.name === 'NotFoundError'){
+      stopAutoRefresh();
+      setFolderUI('error', `The folder "${handle.name}" no longer exists or was moved. Reconnect to pick it again.`);
+    } else {
+      setFolderUI('error', 'Could not read folder: ' + (e && e.message ? e.message : e));
+    }
+    // keep showing the last good data rather than blanking the dashboard
+  }
+}
+
+function startAutoRefresh(){
+  stopAutoRefresh();
+  const ms = getRefreshMs();
+  if (!ms) return; // manual refresh only
+  autoRefreshTimer = setInterval(() => {
+    // skip while the tab is in the background; catching up happens when it's shown again
+    if (document.visibilityState === 'visible' || !document.visibilityState) scanFolder();
+  }, ms);
+}
+// coming back to the tab after longer than the refresh interval → refresh straight away
+document.addEventListener('visibilitychange', () => {
+  const ms = getRefreshMs();
+  if (document.visibilityState === 'visible' && autoRefreshTimer && ms && Date.now() - lastScanAt >= ms) scanFolder();
+});
+(function initRefreshRate(){
+  const sel = $('refreshRate');
+  const current = String(getRefreshMs());
+  if (![...sel.options].some(o => o.value === current)) sel.value = String(DEFAULT_REFRESH_MS);
+  else sel.value = current;
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem(REFRESH_KEY, sel.value); } catch (e) {}
+    if (syncFolderHandle && (autoRefreshTimer || $('refreshFolderBtn').style.display !== 'none')){
+      startAutoRefresh();
+      if (!scanInProgress) setFolderUI('connected');
+    }
+  });
+})();
+function stopAutoRefresh(){
+  if (autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+}
+
+function pickerErrorMessage(e){
+  if (e && e.name === 'SecurityError'){
+    return 'The browser blocked the folder picker here. This usually happens when the dashboard is shown inside another page (an embedded preview). Open the .html file directly in Chrome or Edge and try again.';
+  }
+  return 'Could not open the folder picker: ' + (e && e.message ? e.message : e);
+}
+
+async function connectFolder(){
+  if (!fsSupported) return;
+  let handle;
+  try {
+    handle = await window.showDirectoryPicker({ id: 'ticketLogFolder', mode: 'read' });
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // user closed the picker
+    setFolderUI(syncFolderHandle ? 'error' : 'disconnected', pickerErrorMessage(e));
+    return;
+  }
+  syncFolderHandle = handle;
+  lastFolderSig = '';
+  try { await idbSet(FOLDER_HANDLE_KEY, handle); } catch (e) { /* remembered for this session only */ }
+  await scanFolder();
+  startAutoRefresh();
+}
+
+async function reconnectFolder(){
+  if (!syncFolderHandle) return connectFolder();
+  try {
+    const perm = await syncFolderHandle.requestPermission({ mode: 'read' });
+    if (perm === 'granted'){
+      await scanFolder();
+      startAutoRefresh();
+    } else {
+      setFolderUI('needs-permission');
+    }
+  } catch (e) {
+    // the saved handle can go stale (folder renamed/deleted) — fall back to picking again
+    setFolderUI('error', 'Could not reconnect (' + (e && e.message ? e.message : e) + '). Use Reconnect to choose the folder again.');
+    syncFolderHandle = null;
+  }
+}
+
+function disconnectFolder(){
+  syncFolderHandle = null;
+  lastFolderSig = '';
+  stopAutoRefresh();
+  idbSet(FOLDER_HANDLE_KEY, null).catch(() => {});
+  sources.folder = { files: [], rows: [] };
+  rebuild();
+  setFolderUI('disconnected');
+  $('lastSync').textContent = '';
+  renderFolderDiag(null);
+}
+
+async function tryRestoreFolder(){
+  if (!fsSupported){ setFolderUI('unsupported'); return; }
+  let handle = null;
+  try { handle = await idbGet(FOLDER_HANDLE_KEY); } catch (e) {}
+  if (!handle){ setFolderUI('disconnected'); return; }
+  syncFolderHandle = handle;
+  try {
+    const perm = await handle.queryPermission({ mode: 'read' });
+    if (perm === 'granted'){
+      await scanFolder();
+      startAutoRefresh();
+    } else {
+      setFolderUI('needs-permission');
+    }
+  } catch (e) {
+    setFolderUI('needs-permission');
+  }
+}
+
+/* ---------- manual upload ---------- */
+const dz = $('dropzone');
+const fileInput = $('fileInput');
+
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragging'); });
+dz.addEventListener('dragleave', e => { if (!dz.contains(e.relatedTarget)) dz.classList.remove('dragging'); });
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragging'); handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', () => { handleFiles(fileInput.files); fileInput.value = ''; });
+// stop a file dropped just outside the drop zone from navigating the page away from the dashboard
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+
+let manualNotes = [];
+async function handleFiles(fileList){
+  const all = Array.from(fileList || []);
+  if (!all.length) return;
+  const files = all.filter(f => /\.csv\s*$/i.test(f.name) || f.type === 'text/csv');
+  manualNotes = all.filter(f => !files.includes(f)).map(f => `${f.name} skipped (not a .csv)`);
+  for (const f of files){
+    let text;
+    try { text = await f.text(); }
+    catch (e) { manualNotes.push(`${f.name} couldn't be read (${e.message})`); continue; }
+    const parsed = parseCSV(text);
+    // re-adding a file with the same name replaces it instead of double-counting its rows
+    const prevIdx = sources.manual.files.findIndex(x => x.name === f.name);
+    if (prevIdx >= 0){
+      sources.manual.files.splice(prevIdx, 1);
+      sources.manual.rowsByFile.delete(f.name);
+    }
+    sources.manual.rowsByFile.set(f.name, parsed);
+    sources.manual.files.push({ name: f.name, count: parsed.length, source: 'manual' });
+  }
+  sources.manual.rows = [].concat(...sources.manual.rowsByFile.values());
+  rebuild();
+}
+$('clearManualBtn').addEventListener('click', () => {
+  sources.manual = { files: [], rows: [], rowsByFile: new Map() };
+  manualNotes = [];
+  rebuild();
+});
+
+/* ---------- column detection ----------
+   Column names aren't consistent across files ("Status" vs "Event", "Customer" vs
+   "Customer Name"), so columns are resolved per header set, not once globally.
+   Exact names win over partial matches, so "Event" beats "Event Date". */
+const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g, '');
+function pick(headers, exact, re, avoid){
+  for (const e of exact){ const h = headers.find(x => norm(x) === e); if (h) return h; }
+  return headers.find(h => re.test(h) && !(avoid && avoid.test(h))) || null;
+}
+function detectColsFromHeaders(headers){
+  const duration = pick(headers, ['duration','timespent','handletime','elapsed','elapsedtime','durationseconds','durationsecs'],
+                        /duration|time.?spent|handle.?time|elapsed/i);
+  // plain numbers in the duration column are read in the unit its header names (default: seconds)
+  let unit = 1;
+  if (duration){
+    if (/\b(min|mins|minutes?)\b|\(m\)/i.test(duration)) unit = 60;
+    else if (/\b(hr|hrs|hours?)\b|\(h\)/i.test(duration)) unit = 3600;
+  }
+  return {
+    ticketId:  pick(headers, ['ticketid','ticketnumber','ticketno','ticket','id'], /ticket.*(id|num|no\b)|^id$/i),
+    agent:     pick(headers, ['agent','agentname','assignedagent','assignee'], /agent|assignee/i, /user.?agent/i),
+    customer:  pick(headers, ['customer','customername','client','clientname'], /customer|client/i),
+    complaint: pick(headers, ['complaint','complainttype','issue','issuetype','subject','reason','category'],
+                    /complaint|issue|subject|reason|category/i, /date|time/i),
+    status:    pick(headers, ['status','event','state','ticketstatus','eventtype'], /status|event|state/i, /date|time|statement|estate/i),
+    duration,
+    durationUnit: unit,
+    // per-customer 1–5 rating; deliberately NOT a bare "Rating" match, so a CSAT/satisfaction column isn't picked up by mistake
+    rating:    pick(headers, ['competencytrainingrating','competencyrating','trainingrating','competencytraining','competency','training','traininglevel','competencylevel','proficiency'],
+                    /competen|training|proficien|skill.?level/i)
+  };
+}
+const colsCache = new Map();
+function rowCols(row){
+  const headers = Object.keys(row);
+  const sig = headers.join('\u0001');
+  let c = colsCache.get(sig);
+  if (!c){ c = detectColsFromHeaders(headers); colsCache.set(sig, c); }
+  return c;
+}
+function anyColsPresent(list){
+  const out = { ticketId:false, agent:false, customer:false, complaint:false, status:false, duration:false, rating:false };
+  const seenSigs = new Set();
+  list.forEach(r => {
+    const sig = Object.keys(r).join('\u0001');
+    if (seenSigs.has(sig)) return;
+    seenSigs.add(sig);
+    const rc = rowCols(r);
+    Object.keys(out).forEach(k => { if (rc[k]) out[k] = true; });
+  });
+  return out;
+}
+
+/* ---------- value helpers ---------- */
+function isFinished(v){
+  const s = String(v ?? '').toLowerCase();
+  if (/\b(un|not\s*|non-?\s*)finish/.test(s)) return false; // "Unfinished", "Not Finished"
+  return /finish/.test(s);
+}
+
+function parseTimeToSeconds(v, unit){
+  if (v === undefined || v === null) return 0;
+  const s = String(v).trim().replace(/,/g, '');
+  if (s === '') return 0;
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s) * (unit || 1);
+  if (/^\d+(\.\d+)?(:\d+(\.\d+)?){1,2}$/.test(s)){
+    const parts = s.split(':').map(Number);
+    return parts.length === 3 ? parts[0]*3600 + parts[1]*60 + parts[2] : parts[0]*60 + parts[1];
+  }
+  // "1h 5m 30s", "45 min", "2 hrs"
+  let total = 0, matched = false;
+  s.replace(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b/gi, (_, n, u) => {
+    matched = true;
+    const k = u[0].toLowerCase();
+    total += parseFloat(n) * (k === 'h' ? 3600 : k === 'm' ? 60 : 1);
+    return _;
+  });
+  return matched ? total : 0;
+}
+function secondsToHms(total){
+  if (!isFinite(total)) total = 0;
+  total = Math.round(total);
+  const h = Math.floor(total/3600), m = Math.floor((total%3600)/60), s = total%60;
+  return (h>0?h+'h ':'') + (m>0||h>0?m+'m ':'') + s+'s';
+}
+function secondsToHours(total){ return (total/3600).toFixed(1) + ' hrs'; }
+const dur = r => durSec.get(r) || 0;
+// a cell's value with stray spaces removed, so "Ann" and "Ann " count as the same agent
+const val = (r, col) => col ? String(r[col] ?? '').trim() : '';
+// a 1–5 rating cell: "4", "4.5", "4/5", "4 of 5" → number; anything else (blank, "N/A", 7) → null
+function parseRating(v){
+  const m = String(v ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*(?:\/\s*5|of\s*5|out\s*of\s*5)?$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return n >= 1 && n <= 5 ? n : null;
+}
+function ratingCell(st){
+  if (!st.ratings.length) return '<td class="ratingNone">—</td>';
+  const avg = st.ratings.reduce((a, b) => a + b, 0) / st.ratings.length;
+  const lo = Math.min(...st.ratings), hi = Math.max(...st.ratings);
+  const level = avg < 2.5 ? 'low' : avg < 3.5 ? 'mid' : 'high';
+  const range = lo !== hi ? ` <span class="ratingRange" title="Ratings vary across this customer's tickets">(${lo}–${hi})</span>` : '';
+  const pips = [1,2,3,4,5].map(i => `<span class="pip${i <= Math.round(avg) ? ' on' : ''}"></span>`).join('');
+  return `<td><span class="rating ${level}" title="Average of ${st.ratings.length} rated ticket(s)">${avg.toFixed(1)}</span><span class="pips" aria-hidden="true">${pips}</span>${range}</td>`;
+}
+
+/* ---------- combine sources, filter, de-duplicate, render ---------- */
+let lastStats = { excludedStatus: 0, excludedDupes: 0, unreadableDurations: 0 };
+
+function rebuild(){
+  const raw = [];
+  for (const r of sources.folder.rows) raw.push(r);
+  for (const r of sources.manual.rows) raw.push(r);
+
+  // keep only rows whose own status/event column says Finished
+  const finished = raw.filter(r => {
+    const rc = rowCols(r);
+    return rc.status ? isFinished(r[rc.status]) : true; // no status column → keep, can't judge
+  });
+
+  // collapse repeated event rows for the same ticket + agent
+  const seen = new Set();
+  rows = finished.filter(r => {
+    const rc = rowCols(r);
+    const id = rc.ticketId ? String(r[rc.ticketId] ?? '').trim() : '';
+    if (!id) return true;
+    const key = (rc.agent ? String(r[rc.agent] ?? '').trim() + '||' : '') + id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  let unreadable = 0;
+  rows.forEach(r => {
+    const rc = rowCols(r);
+    const v = rc.duration ? r[rc.duration] : '';
+    const secs = parseTimeToSeconds(v, rc.durationUnit);
+    if (rc.duration && String(v ?? '').trim() !== '' && secs === 0 && !/^0+([:.]0+)*$/.test(String(v).trim())) unreadable++;
+    durSec.set(r, secs);
+  });
+
+  lastStats = { excludedStatus: raw.length - finished.length, excludedDupes: finished.length - rows.length, unreadableDurations: unreadable };
+
+  renderFileList();
+  updateDataSourceSummary();
+  $('clearManualBtn').disabled = !sources.manual.files.length;
+  $('logBtn').disabled = !rows.length;
+
+  const output = $('output');
+  if (typeof checkAutoSnapshot === 'function' && !autoBusy) setTimeout(checkAutoSnapshot, 0);
+  if (!raw.length){
+    setPreview('');
+    output.innerHTML = sources.folder.files.length || sources.manual.files.length
+      ? '<p class="empty">The loaded file(s) contain no data rows.</p>'
+      : (syncFolderHandle ? '<p class="empty">No CSV data found in the synced folder — open Settings to see what the browser can see there.</p>' : '');
+    return;
+  }
+  if (!rows.length){
+    setPreview('');
+    output.innerHTML = '<p class="empty">No tickets with a "Finished" status were found in the loaded file(s).</p>';
+    return;
+  }
+  render();
+}
+
+function renderFileList(){
+  const files = sources.folder.files.concat(sources.manual.files);
+  const el = $('fileList');
+  if (!files.length && !manualNotes.length){ el.innerHTML = ''; return; }
+  let txt = files.map(f => `${esc(f.name)} (${f.count.toLocaleString()}${f.source === 'folder' ? ', synced' : ''})`).join(' · ');
+  if (files.length) txt += ` — <strong>${rows.length.toLocaleString()} unique Finished ticket(s) included across ${files.length} file(s)</strong>`;
+  const notes = [];
+  if (lastStats.excludedStatus) notes.push(`${lastStats.excludedStatus.toLocaleString()} non-Finished row(s) excluded`);
+  if (lastStats.excludedDupes) notes.push(`${lastStats.excludedDupes.toLocaleString()} duplicate event row(s) for already-counted tickets collapsed`);
+  if (notes.length) txt += ` <span>(${notes.join('; ')})</span>`;
+  if (lastStats.unreadableDurations) txt += `<div class="warn" style="margin-top:4px;">${lastStats.unreadableDurations.toLocaleString()} ticket(s) have a duration value that couldn't be read and were counted as 0 time.</div>`;
+  if (manualNotes.length) txt += `<div class="warn" style="margin-top:4px;">${manualNotes.map(esc).join(' · ')}</div>`;
+  el.innerHTML = txt;
+}
+
+function updateDataSourceSummary(){
+  const el = $('dataSourceSummary');
+  const link = '<a href="#" data-open-settings style="color:var(--accent);">Settings</a>';
+  const nFolder = sources.folder.files.length, nManual = sources.manual.files.length;
+  if (!nFolder && !nManual){
+    el.innerHTML = `No data loaded yet — open ${link} to connect a synced folder or upload files.`;
+    return;
+  }
+  const parts = [];
+  if (nFolder) parts.push(`synced folder "${esc(syncFolderHandle ? syncFolderHandle.name : '')}"`);
+  if (nManual) parts.push(`${nManual} uploaded file(s)`);
+  el.innerHTML = `${rows.length.toLocaleString()} ticket(s) loaded from ${nFolder + nManual} file(s) via ${parts.join(' + ')}. ${link}`;
+}
+
+function setPreview(html){
+  $('previewWrap').innerHTML = html || '<p class="empty">No data loaded yet.</p>';
+}
+
+function card(label, value){
+  return `<div class="card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`;
+}
+
+function render(){
+  const has = anyColsPresent(rows);
+  const agents = new Set(), customers = new Set(), statuses = {}, complaints = {};
+  let totalSec = 0;
+  rows.forEach(r => {
+    const rc = rowCols(r);
+    const a = val(r, rc.agent), cu = val(r, rc.customer);
+    if (a) agents.add(a);
+    if (cu) customers.add(cu);
+    if (rc.status){
+      const raw = val(r, rc.status) || '(blank)';
+      const s = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase(); // "finished" and "Finished" are one status
+      statuses[s] = (statuses[s]||0)+1;
+    }
+    if (rc.complaint){ const c = val(r, rc.complaint) || '(blank)'; complaints[c] = (complaints[c]||0)+1; }
+    totalSec += dur(r);
+  });
+
+  let html = '<div class="grid">';
+  html += card('Total Tickets', rows.length.toLocaleString());
+  if (has.customer) html += card('Total Customers Helped', customers.size.toLocaleString());
+  if (has.duration) html += card('Total Hours', secondsToHours(totalSec));
+  if (has.agent) html += card('Unique Agents', agents.size.toLocaleString());
+  if (has.duration) html += card('Avg Time / Ticket', secondsToHms(totalSec / rows.length));
+  html += '</div>';
+
+  if (has.agent){
+    html += '<div class="section"><h2>Per-agent breakdown</h2><div class="tableWrap"><table><thead><tr>';
+    html += '<th>Agent</th><th>Tickets</th><th>Unique Customers</th><th>Total Hours</th><th>Avg Time / Ticket</th></tr></thead><tbody>';
+    const agentStats = new Map();
+    rows.forEach(r => {
+      const rc = rowCols(r);
+      const a = val(r, rc.agent) || '(blank)';
+      if (!agentStats.has(a)) agentStats.set(a, { tickets:0, customers:new Set(), sec:0 });
+      const s = agentStats.get(a);
+      s.tickets++;
+      const cu = val(r, rc.customer);
+      if (cu) s.customers.add(cu);
+      s.sec += dur(r);
+    });
+    [...agentStats].sort((a,b)=>b[1].sec-a[1].sec || b[1].tickets-a[1].tickets).forEach(([agent,s]) => {
+      html += `<tr><td>${esc(agent)}</td><td>${s.tickets}</td><td>${s.customers.size}</td><td>${secondsToHours(s.sec)}</td><td>${secondsToHms(s.sec/s.tickets)}</td></tr>`;
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  if (has.customer){
+    html += '<div class="section"><h2>Per-customer breakdown</h2>';
+    html += '<p class="sub" style="margin-bottom:8px;">Sorted by number of different agents involved, so shared/simultaneous cases surface first.</p>';
+    html += '<div class="tableWrap"><table><thead><tr><th>Customer</th><th>Tickets</th><th>Agents Involved</th><th>Total Hours</th><th>Competency / Training Rating</th></tr></thead><tbody>';
+    let badRatings = 0;
+    const customerStats = new Map();
+    rows.forEach(r => {
+      const rc = rowCols(r);
+      const c = val(r, rc.customer) || '(blank)';
+      if (!customerStats.has(c)) customerStats.set(c, { tickets:0, agents:new Set(), sec:0, ratings:[] });
+      const s = customerStats.get(c);
+      s.tickets++;
+      const a = val(r, rc.agent);
+      if (a) s.agents.add(a);
+      s.sec += dur(r);
+      if (rc.rating){
+        const raw = val(r, rc.rating), n = parseRating(raw);
+        if (n !== null) s.ratings.push(n);
+        else if (raw && !/^(n\/?a|none|-+|—)$/i.test(raw)) badRatings++;
+      }
+    });
+    [...customerStats]
+      .sort((a,b) => b[1].agents.size - a[1].agents.size || b[1].sec - a[1].sec)
+      .forEach(([customer,s]) => {
+        const who = s.agents.size ? ` (${esc([...s.agents].join(', '))})` : '';
+        html += `<tr><td>${esc(customer)}</td><td>${s.tickets}</td><td>${s.agents.size}${who}</td><td>${secondsToHours(s.sec)}</td>${ratingCell(s)}</tr>`;
+      });
+    html += '</tbody></table></div>';
+    if (!has.rating){
+      html += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No rating column found in the loaded files. Ratings are read from a column whose header contains \u201cCompetency\u201d or \u201cTraining\u201d (e.g. \u201cCompetency / Training Rating\u201d), with values 1\u20135.</p>';
+    } else if (badRatings){
+      html += `<p class="sub warn" style="margin:8px 0 0;font-size:.8rem;">${badRatings.toLocaleString()} rating value(s) weren\u2019t a number from 1 to 5 and were left out of the averages.</p>`;
+    }
+    html += '</div>';
+  }
+
+  // chart cards sit side by side (two per row on wide screens, stacked on phones)
+  const charts = [];
+  const chartCard = (title, body) => `<div class="chartCard"><h2>${esc(title)}</h2><div class="chartWrap">${body}</div></div>`;
+  // after filtering, every row is "Finished", so a status chart would always be a single bar — only show it if there's variety
+  if (has.status && Object.keys(statuses).length > 1){
+    const entries = Object.entries(statuses).sort((a,b)=>b[1]-a[1]).map(([label,value])=>({label,value}));
+    charts.push(chartCard('Status breakdown', hBarChartSVG(entries, {width:460, leftLabelWidth:120})));
+  }
+  if (has.complaint){
+    const entries = Object.entries(complaints).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,value])=>({label,value}));
+    charts.push(chartCard('Top complaint types', hBarChartSVG(entries, {width:460, leftLabelWidth:140})));
+  }
+  if (has.customer){
+    const custCounts = {};
+    rows.forEach(r => {
+      const rc = rowCols(r);
+      const c = val(r, rc.customer) || '(blank)';
+      custCounts[c] = (custCounts[c]||0)+1;
+    });
+    const sorted = Object.entries(custCounts).sort((a,b)=>b[1]-a[1]);
+    const slices = sorted.slice(0,5).map(([label,value])=>({label,value}));
+    // remaining customers become one grey slice, so percentages are a share of ALL tickets
+    const otherCount = sorted.slice(5).reduce((n, [,v]) => n + v, 0);
+    if (otherCount) slices.push({ label: `All other customers (${sorted.length - 5})`, value: otherCount, other: true });
+    charts.push(chartCard('Top 5 customers by ticket count', pieChartHTML(slices)));
+  }
+  if (charts.length) html += `<div class="section chartRow">${charts.join('')}</div>`;
+
+  $('output').innerHTML = html;
+
+  // data preview (in Settings): union of every header across all loaded rows
+  const headerSet = new Set();
+  rows.forEach(r => Object.keys(r).forEach(h => headerSet.add(h)));
+  const headers = [...headerSet];
+  let preview = '<div class="tableWrap"><table><thead><tr>';
+  preview += headers.map(h => `<th>${esc(h)}</th>`).join('') + '</tr></thead><tbody>';
+  rows.slice(0,50).forEach(r => { preview += '<tr>' + headers.map(h => `<td>${esc(r[h] ?? '')}</td>`).join('') + '</tr>'; });
+  preview += '</tbody></table></div>';
+  setPreview(preview);
+}
+
+/* ---------- metrics log (localStorage) ---------- */
+const LOG_KEY = 'ticketDashboardMetricsLog';
+
+function loadLog(){
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(e => e && e.timestamp) : [];
+  } catch (e) { return []; }
+}
+function saveLog(log){
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(log)); return true; }
+  catch (e) { alert('Could not save the snapshot — browser storage is unavailable or full.'); return false; }
+}
+function currentTotals(){
+  const agents = new Set(), customers = new Set();
+  let sec = 0;
+  rows.forEach(r => {
+    const rc = rowCols(r);
+    const a = val(r, rc.agent), cu = val(r, rc.customer);
+    if (a) agents.add(a);
+    if (cu) customers.add(cu);
+    sec += dur(r);
+  });
+  return { tickets: rows.length, customers: customers.size, agents: agents.size, hours: +(sec/3600).toFixed(2) };
+}
+function logSnapshot(){
+  if (!rows.length) return;
+  const log = loadLog();
+  log.push({ timestamp: new Date().toISOString(), ...currentTotals(), type: 'manual' });
+  if (saveLog(log)) renderLog();
+}
+function clearLog(){
+  if (!loadLog().length) return;
+  if (!confirm('Clear all logged snapshots? This cannot be undone.')) return;
+  saveLog([]);
+  renderLog();
+}
+function toCsv(log){
+  const headers = ['timestamp','type','tickets','customers','agents','hours'];
+  return [headers.join(',')].concat(log.map(e => headers.map(h => h === 'type' ? (e.type || 'manual') : (e[h] ?? '')).join(','))).join('\n');
+}
+function downloadLog(){
+  const log = loadLog();
+  if (!log.length) return;
+  const url = URL.createObjectURL(new Blob([toCsv(log)], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ticket-dashboard-metrics-log.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000); // revoking immediately can cancel the download in some browsers
+}
+function renderLog(){
+  const log = loadLog();
+  const wrap = $('logWrap');
+  $('downloadLogBtn').disabled = $('clearLogBtn').disabled = !log.length;
+  if (!log.length){
+    wrap.innerHTML = '<p class="empty">No snapshots logged yet. Load data, then click \"Log this snapshot\" or turn on automatic snapshots below.</p>';
+    return;
+  }
+  let html = '<div class="tableWrap"><table><thead><tr><th>Logged At</th><th>Type</th><th>Tickets</th><th>Customers</th><th>Agents</th><th>Hours</th></tr></thead><tbody>';
+  log.slice().reverse().forEach(e => {
+    const type = e.type === 'auto' ? '<span class="tag auto">Auto</span>' : '<span class="tag">Manual</span>';
+    html += `<tr><td>${esc(new Date(e.timestamp).toLocaleString())}</td><td>${type}</td><td>${esc(e.tickets)}</td><td>${esc(e.customers)}</td><td>${esc(e.agents)}</td><td>${esc(e.hours)}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  const labels = log.map(e => new Date(e.timestamp).toLocaleDateString());
+  html += `<div class="chartWrap" style="margin-top:12px;">${lineChartSVG(labels, [
+    { cls:'line-tickets', color:'#4f6df5', values: log.map(e => Number(e.tickets)) },
+    { cls:'line-hours', color:'#34d399', values: log.map(e => Number(e.hours)) }
+  ])}</div>`;
+  html += `<div class="legend"><span><span class="dot" style="background:#4f6df5;"></span>Tickets</span><span><span class="dot" style="background:#34d399;"></span>Hours</span></div>`;
+  wrap.innerHTML = html;
+}
+
+$('logBtn').addEventListener('click', logSnapshot);
+$('clearLogBtn').addEventListener('click', clearLog);
+$('downloadLogBtn').addEventListener('click', downloadLog);
+
+/* ---------- automatic snapshots ----------
+   Logs one snapshot per chosen day at the chosen time, while this page is open
+   (a background tab is fine). If the page is opened later the same day, it
+   catches up then; days when the page wasn't open at all are skipped. */
+const AUTO_KEY = 'ticketDashboardAutoSnapshot';
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const AUTO_DEFAULTS = { enabled: false, time: '17:00', days: [1,2,3,4,5], lastDate: null };
+let autoBusy = false;
+
+function getAuto(){
+  let a = null;
+  try { a = JSON.parse(localStorage.getItem(AUTO_KEY) || 'null'); } catch (e) {}
+  a = Object.assign({}, AUTO_DEFAULTS, a && typeof a === 'object' ? a : {});
+  if (!/^\d{2}:\d{2}$/.test(a.time)) a.time = AUTO_DEFAULTS.time;
+  if (!Array.isArray(a.days)) a.days = AUTO_DEFAULTS.days.slice();
+  a.days = a.days.map(Number).filter(d => d >= 0 && d <= 6);
+  return a;
+}
+function saveAuto(a){ try { localStorage.setItem(AUTO_KEY, JSON.stringify(a)); } catch (e) {} }
+function dateKey(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function atTime(day, time){
+  const [h, m] = time.split(':').map(Number);
+  const d = new Date(day); d.setHours(h, m, 0, 0); return d;
+}
+// next moment a snapshot will be taken (today's if it's still pending)
+function nextAutoRun(a, now){
+  for (let i = 0; i <= 7; i++){
+    const day = new Date(now); day.setDate(now.getDate() + i);
+    if (!a.days.includes(day.getDay())) continue;
+    const t = atTime(day, a.time);
+    if (i === 0 && (a.lastDate === dateKey(now))) continue; // today's already done
+    if (i === 0 && t <= now) return { at: t, due: true };
+    return { at: t, due: false };
+  }
+  return null;
+}
+function fmtWhen(d, now){
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (dateKey(d) === dateKey(now)) return `today at ${time}`;
+  const tmr = new Date(now); tmr.setDate(now.getDate() + 1);
+  if (dateKey(d) === dateKey(tmr)) return `tomorrow at ${time}`;
+  return `${d.toLocaleDateString([], { weekday: 'long' })} at ${time}`;
+}
+function updateAutoStatus(note){
+  const a = getAuto(), el = $('autoStatus'), now = new Date();
+  if (!a.enabled){ el.textContent = 'Automatic snapshots are off.'; return; }
+  if (!a.days.length){ el.innerHTML = '<span class="warn">Pick at least one day.</span>'; return; }
+  const next = nextAutoRun(a, now);
+  let txt = note || '';
+  if (!txt && next) txt = next.due
+    ? (rows.length ? 'Taking today’s snapshot…' : 'Today’s snapshot is due — waiting for data to load.')
+    : `Next automatic snapshot: ${fmtWhen(next.at, now)}.`;
+  el.innerHTML = esc(txt) + ' <span style="opacity:.8">Keep this page open (a background tab is fine) — snapshots can’t be taken while it’s closed.</span>';
+}
+
+async function checkAutoSnapshot(){
+  const a = getAuto();
+  if (!a.enabled || autoBusy) { updateAutoStatus(); return; }
+  const now = new Date();
+  const next = nextAutoRun(a, now);
+  if (!next || !next.due){ updateAutoStatus(); return; }
+  autoBusy = true;
+  try {
+    // pull the latest files first so the snapshot reflects what's on disk right now
+    if (syncFolderHandle) await scanFolder();
+    if (!rows.length){ updateAutoStatus(); return; } // retried on the next check, or as soon as data loads
+    const latest = getAuto();
+    if (!latest.enabled || latest.lastDate === dateKey(now)) return; // changed while scanning
+    const log = loadLog();
+    log.push({ timestamp: new Date().toISOString(), ...currentTotals(), type: 'auto' });
+    if (saveLog(log)){
+      latest.lastDate = dateKey(now);
+      saveAuto(latest);
+      renderLog();
+    }
+  } finally {
+    autoBusy = false;
+    updateAutoStatus();
+  }
+}
+
+(function initAutoSnapshot(){
+  const a = getAuto();
+  $('autoEnabled').checked = a.enabled;
+  $('autoTime').value = a.time;
+  // Monday-first day chips
+  $('autoDays').innerHTML = [1,2,3,4,5,6,0].map(d =>
+    `<label class="dayChip"><input type="checkbox" value="${d}"${a.days.includes(d) ? ' checked' : ''}>${DAY_NAMES[d]}</label>`).join('');
+
+  const onChange = () => {
+    const cur = getAuto();
+    cur.enabled = $('autoEnabled').checked;
+    if (/^\d{2}:\d{2}$/.test($('autoTime').value)) cur.time = $('autoTime').value;
+    cur.days = [...$('autoDays').querySelectorAll('input:checked')].map(i => Number(i.value));
+    saveAuto(cur);
+    checkAutoSnapshot();
+  };
+  $('autoEnabled').addEventListener('change', onChange);
+  $('autoTime').addEventListener('change', onChange);
+  $('autoDays').addEventListener('change', onChange);
+
+  setInterval(checkAutoSnapshot, 20000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkAutoSnapshot(); });
+  updateAutoStatus();
+})();
+
+/* ---------- start-up ---------- */
+updateDataSourceSummary();
+renderLog();
+if (fsSupported){
+  $('connectFolderBtn').addEventListener('click', connectFolder);
+  $('reconnectFolderBtn').addEventListener('click', reconnectFolder);
+  $('refreshFolderBtn').addEventListener('click', () => scanFolder());
+  $('disconnectFolderBtn').addEventListener('click', disconnectFolder);
+}
+tryRestoreFolder();
+</script>
+</body>
+</html>

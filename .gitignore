@@ -1,0 +1,3 @@
+# keep ticket data out of the repo
+*.csv
+.DS_Store
