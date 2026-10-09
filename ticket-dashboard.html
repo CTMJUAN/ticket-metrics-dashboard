@@ -1710,7 +1710,7 @@ function rebuild(){
 
 /* ---------- In Progress: tickets that are running or paused right now ----------
    From exports: the Status column (Running / Paused / Not started / Finished).
-   From work logs: each ticket's latest status event (started/resumed → running,
+   From work logs: each ticket's latest status event (created/started/resumed → running,
    paused → paused, finished/deleted → done). Finished anywhere wins, because
    finishing is final; test tickets are left out like everywhere else. */
 let inProgress = null;
@@ -1723,7 +1723,8 @@ const EXPORT_STATE = memo(v => {
   if (/delet|cancel/.test(s)) return 'deleted';
   return null;
 });
-const EVENT_STATE = { ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_finished: 'finished', ticket_deleted: 'deleted' };
+// the tracker logs a new ticket as ticket_created and starts its timer at once, so a created ticket is running
+const EVENT_STATE = { ticket_created: 'running', ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_finished: 'finished', ticket_deleted: 'deleted' };
 function collectInProgress(raw){
   const t = new Map(); // agent||id → ticket
   let known = false;   // any status information at all?
@@ -1743,7 +1744,7 @@ function collectInProgress(raw){
       const st = EVENT_STATE[v.toLowerCase()];
       if (st === 'finished') e.finished = true;
       if (st === 'deleted') e.deleted = true;
-      if (st === 'running' && /started/i.test(v) && ms !== null && (e.startMs === null || ms < e.startMs)) e.startMs = ms;
+      if (st === 'running' && /created|started/i.test(v) && ms !== null && (e.startMs === null || ms < e.startMs)) e.startMs = ms;
       const when = ms ?? -Infinity;
       if (st && (!e.fromLog || when > e.stateMs || (when === e.stateMs && order > e.stateOrder))){ e.state = st; e.stateMs = when; e.stateOrder = order; e.fromLog = true; }
       if (when >= e.rowMs){ e.row = r; e.rowMs = when; } // latest labels (customer, complaint)
