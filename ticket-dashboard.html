@@ -70,6 +70,27 @@ svg text.pieLabel{fill:#fff;font-size:13px;font-weight:600;}
 .pager button{padding:5px 11px;}
 .pagerInfo{color:var(--sub);font-size:.8rem;margin:0 6px;}
 @media (max-width:600px){.pager{justify-content:center;}}
+.cgBox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px;}
+.cgBox h3{font-size:.85rem;margin:0 0 8px;}
+.cgList{max-height:260px;overflow-y:auto;margin:0 -4px;}
+.cgItem{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:6px;font-size:.85rem;cursor:pointer;}
+.cgItem:hover{background:var(--bg);}
+.cgItem .cgName{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cgCount{color:var(--sub);font-size:.78rem;white-space:nowrap;}
+.cgVariants{color:var(--sub);font-size:.72rem;}
+.cgGroup{border-top:1px solid var(--border);padding:10px 0;}
+.cgGroup:first-of-type{border-top:none;padding-top:0;}
+.cgGroupHead{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+.cgInput{flex:1;min-width:0;font-size:.85rem;border-radius:8px;padding:6px 9px;border:1px solid var(--border);background:var(--bg);color:var(--text);}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:.75rem;border:1px solid var(--border);border-radius:999px;padding:2px 4px 2px 9px;margin:0 4px 4px 0;color:var(--text);}
+.chip button{border:none;background:transparent;color:var(--sub);padding:0 5px;font-size:.85rem;line-height:1;cursor:pointer;}
+.chip button:hover{color:var(--text);}
+.cgSuggest{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--border);font-size:.82rem;}
+.cgSuggest:first-of-type{border-top:none;}
+.cgSuggest .cgWhat{flex:1;min-width:200px;}
+.btnSmall{font-size:.78rem;padding:4px 10px;}
+.chartNote{color:var(--sub);font-size:.75rem;margin-top:6px;}
+.chartNote a{color:var(--accent);}
 .chartWrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;}
 .tableWrap{overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:12px;background:var(--card);}
 table{border-collapse:collapse;width:100%;font-size:.82rem;min-width:480px;}
@@ -158,6 +179,12 @@ svg .line-hours{stroke:#34d399;fill:none;stroke-width:2;}
         <button id="clearManualBtn" class="btnGhost" disabled>Remove uploaded files</button>
       </div>
       <div id="fileList"></div>
+    </div>
+
+    <div class="section" id="complaintSection">
+      <h2>Complaint types</h2>
+      <p class="sub" style="margin-top:-6px;">Combine labels that mean the same thing so the Top complaint types chart counts them together. Differences in capitals, spacing, punctuation and plurals (e.g. “Password reset” / “password-resets”) are combined automatically, and blank complaint values are ignored.</p>
+      <div id="complaintPanel"><p class="empty">Load data to see complaint types.</p></div>
     </div>
 
     <div class="section">
@@ -837,6 +864,287 @@ function parseRating(v){
   const n = parseFloat(m[1]);
   return n >= 1 && n <= 5 ? n : null;
 }
+/* ---------- complaint types: blanks, automatic variants, user-combined groups ----------
+   Every complaint value is reduced to a "key" that ignores capitals, spacing,
+   punctuation and plurals, so "Password reset", "password-resets" and
+   "PASSWORD  RESET" are one type automatically. Users then combine keys that
+   mean the same thing into named groups (saved in this browser). */
+const CG_KEY = 'ticketDashboardComplaintGroups';
+const CG_DISMISS_KEY = 'ticketDashboardComplaintDismissed';
+const BLANK_COMPLAINT = /^(?:-+|—|–|n\/?a|na|none|null|\(blank\))?$/i;
+const FILLER = new Set(['issue','problem','error','request','question','query','inquiry','enquiry','concern','help','ticket','with','the','a','an','of','for','to','my','on','in','and','general']);
+
+function singular(w){
+  if (w.length > 4 && w.endsWith('ies')) return w.slice(0, -3) + 'y';
+  if (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us') && !w.endsWith('is')) return w.slice(0, -1);
+  return w;
+}
+function complaintWords(raw){
+  return String(raw).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).map(singular);
+}
+// null = blank
+function complaintKey(raw){
+  const s = String(raw ?? '').trim();
+  if (BLANK_COMPLAINT.test(s)) return null;
+  const k = complaintWords(s).join('');
+  return k || null;
+}
+function complaintCore(raw){
+  const words = complaintWords(raw);
+  const core = words.filter(w => !FILLER.has(w)).join('');
+  return core || words.join('');
+}
+
+function loadGroups(){
+  try {
+    const g = JSON.parse(localStorage.getItem(CG_KEY) || '[]');
+    return Array.isArray(g) ? g.filter(x => x && typeof x.name === 'string' && Array.isArray(x.members))
+      .map(x => ({ name: x.name.trim() || 'Combined', members: [...new Set(x.members.map(String))] })) : [];
+  } catch (e) { return []; }
+}
+function saveGroups(g){ try { localStorage.setItem(CG_KEY, JSON.stringify(g)); } catch (e) {} }
+function loadDismissed(){ try { const d = JSON.parse(localStorage.getItem(CG_DISMISS_KEY) || '[]'); return new Set(Array.isArray(d) ? d : []); } catch (e) { return new Set(); } }
+function saveDismissed(set){ try { localStorage.setItem(CG_DISMISS_KEY, JSON.stringify([...set])); } catch (e) {} }
+
+// Scans the current rows: counts per key, the spellings seen, and the final label per key.
+function buildComplaintIndex(list){
+  const keys = new Map(); // key -> { count, spellings: Map(spelling -> n), core }
+  let blanks = 0, anyCol = false;
+  list.forEach(r => {
+    const rc = rowCols(r);
+    if (!rc.complaint) return;
+    anyCol = true;
+    const raw = val(r, rc.complaint);
+    const k = complaintKey(raw);
+    if (!k){ blanks++; return; }
+    let e = keys.get(k);
+    if (!e){ e = { count: 0, spellings: new Map(), cores: [...new Set([complaintCore(raw), k])] }; keys.set(k, e); }
+    e.count++;
+    e.spellings.set(raw, (e.spellings.get(raw) || 0) + 1);
+  });
+  keys.forEach(e => { e.label = [...e.spellings].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]; });
+
+  const groups = loadGroups();
+  const keyToGroup = new Map();
+  groups.forEach((g, gi) => g.members.forEach(m => { if (!keyToGroup.has(m)) keyToGroup.set(m, gi); }));
+
+  const labelCounts = new Map();
+  keys.forEach((e, k) => {
+    const gi = keyToGroup.get(k);
+    const label = gi !== undefined ? groups[gi].name : e.label;
+    labelCounts.set(label, (labelCounts.get(label) || 0) + e.count);
+  });
+  return { keys, groups, keyToGroup, labelCounts, blanks, anyCol };
+}
+
+function levenshtein(a, b, max){
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++){
+    const cur = [i]; let rowMin = i;
+    for (let j = 1; j <= b.length; j++){
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+      if (cur[j] < rowMin) rowMin = cur[j];
+    }
+    if (rowMin > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function coresSimilar(a, b){
+  if (a === b) return true;
+  const n = Math.min(a.length, b.length);
+  const max = n >= 8 ? 2 : n >= 5 ? 1 : 0;
+  return max > 0 && levenshtein(a, b, max) <= max;
+}
+
+// Units are existing groups and ungrouped keys; suggest clusters of units that look alike.
+function complaintSuggestions(ix){
+  const units = [];
+  ix.groups.forEach((g, gi) => {
+    const present = g.members.filter(k => ix.keys.has(k));
+    if (present.length) units.push({ id: 'g:' + gi, cores: present.flatMap(k => ix.keys.get(k).cores), count: present.reduce((n, k) => n + ix.keys.get(k).count, 0), label: g.name, group: gi });
+  });
+  ix.keys.forEach((e, k) => { if (!ix.keyToGroup.has(k)) units.push({ id: 'k:' + k, cores: e.cores, count: e.count, label: e.label, key: k }); });
+  const n = units.length;
+  if (n < 2) return [];
+  const parent = units.map((_, i) => i);
+  const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  const fuzzy = n <= 400; // keep big label sets fast: exact-core matches only
+  if (fuzzy){
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++){
+      if (find(i) === find(j)) continue;
+      if (units[i].cores.some(a => units[j].cores.some(b => coresSimilar(a, b)))) parent[find(i)] = find(j);
+    }
+  } else {
+    const byCore = new Map();
+    units.forEach((u, i) => u.cores.forEach(c => { if (byCore.has(c)) parent[find(i)] = find(byCore.get(c)); else byCore.set(c, i); }));
+  }
+  const clusters = new Map();
+  units.forEach((u, i) => { const r = find(i); if (!clusters.has(r)) clusters.set(r, []); clusters.get(r).push(u); });
+  const dismissed = loadDismissed();
+  return [...clusters.values()]
+    .filter(c => c.length > 1)
+    .map(c => c.sort((a, b) => b.count - a.count))
+    .filter(c => !dismissed.has(clusterSig(c, ix)))
+    .sort((a, b) => b.reduce((n, u) => n + u.count, 0) - a.reduce((n, u) => n + u.count, 0));
+}
+function unitKeys(u, ix){ return u.group !== undefined ? ix.groups[u.group].members : [u.key]; }
+function clusterSig(c, ix){ return c.flatMap(u => unitKeys(u, ix)).sort().join('|'); }
+
+// merge the given units (groups and/or loose keys) into one group
+function combineUnits(unitIds, name){
+  const groups = loadGroups();
+  const members = new Set();
+  const dropGroups = new Set();
+  let keepName = null;
+  unitIds.forEach(id => {
+    if (id.startsWith('g:')){
+      const gi = Number(id.slice(2));
+      if (!groups[gi]) return;
+      groups[gi].members.forEach(m => members.add(m));
+      dropGroups.add(gi);
+      if (!keepName) keepName = groups[gi].name;
+    } else members.add(id.slice(2));
+  });
+  if (members.size < 2) return;
+  const next = groups.filter((_, gi) => !dropGroups.has(gi))
+    .map(g => ({ name: g.name, members: g.members.filter(m => !members.has(m)) }))
+    .filter(g => g.members.length);
+  next.push({ name: (name || keepName || 'Combined').trim(), members: [...members] });
+  saveGroups(next);
+}
+
+let cgSelected = new Set();   // ticked items survive redraws (e.g. a 30-second folder refresh)
+let cgNameDraft = '';
+let cgLastIndex = null;
+
+function renderComplaintPanel(ix){
+  const box = $('complaintPanel');
+  if (ix === null){ box.innerHTML = '<p class="empty">Load data to see complaint types.</p>'; cgLastIndex = null; return; }
+  if (ix === 'none' || !ix.anyCol){ box.innerHTML = '<p class="empty">No complaint column found in the loaded files (looked for headers like “Complaint”, “Issue”, “Reason” or “Category”).</p>'; cgLastIndex = null; return; }
+  cgLastIndex = ix;
+  const cnt = n => `<span class="cgCount">${n.toLocaleString()}</span>`;
+  const spellingsOf = keys => keys.flatMap(k => ix.keys.has(k) ? [...ix.keys.get(k).spellings.keys()] : []);
+  let html = '';
+
+  html += `<p class="sub" style="margin:0 0 10px;font-size:.82rem;">${ix.keys.size.toLocaleString()} distinct type(s) → ${ix.labelCounts.size.toLocaleString()} after combining${ix.blanks ? ` · ${ix.blanks.toLocaleString()} blank value(s) ignored` : ''}.</p>`;
+
+  // suggestions
+  const sugg = complaintSuggestions(ix);
+  if (sugg.length){
+    html += '<div class="cgBox"><h3>Suggested combinations</h3>';
+    sugg.slice(0, 12).forEach(c => {
+      const ids = c.map(u => u.id).join(',');
+      const what = c.map(u => `“${esc(u.label)}” ${cnt(u.count)}`).join(' + ');
+      html += `<div class="cgSuggest"><span class="cgWhat">${what}</span>
+        <button class="btnPrimary btnSmall" data-cg-combine="${esc(ids)}" data-cg-name="${esc(c[0].label)}">Combine as “${esc(c[0].label)}”</button>
+        <button class="btnGhost btnSmall" data-cg-dismiss="${esc(clusterSig(c, ix))}">Dismiss</button></div>`;
+    });
+    if (sugg.length > 12) html += `<p class="sub" style="margin:6px 0 0;font-size:.78rem;">${sugg.length - 12} more — they’ll appear as you work through these.</p>`;
+    html += '</div>';
+  }
+
+  // existing groups
+  const liveGroups = ix.groups.map((g, gi) => ({ g, gi, present: g.members.filter(k => ix.keys.has(k)) }));
+  if (ix.groups.length){
+    html += '<div class="cgBox"><h3>Combined types</h3>';
+    liveGroups.forEach(({ g, gi, present }) => {
+      const total = present.reduce((n, k) => n + ix.keys.get(k).count, 0);
+      const chips = g.members.map(k => {
+        const e = ix.keys.get(k);
+        const label = e ? e.label : k;
+        return `<span class="chip" title="${e ? esc([...e.spellings.keys()].join(' / ')) : 'Not in the current data'}">${esc(label)}${e ? ' ' + cnt(e.count) : ' <span class="cgCount">0</span>'}<button data-cg-remove="${gi}|${esc(k)}" aria-label="Remove ${esc(label)} from this group">×</button></span>`;
+      }).join('');
+      html += `<div class="cgGroup"><div class="cgGroupHead"><input class="cgInput" data-cg-rename="${gi}" value="${esc(g.name)}" aria-label="Combined type name">${cnt(total)}<button class="btnGhost btnSmall" data-cg-ungroup="${gi}">Ungroup</button></div>${chips}</div>`;
+    });
+    html += '</div>';
+  }
+
+  // pick-and-combine list: groups first, then loose types, biggest first
+  const items = [
+    ...liveGroups.filter(x => x.present.length).map(({ g, gi, present }) => ({ id: 'g:' + gi, label: g.name, count: present.reduce((n, k) => n + ix.keys.get(k).count, 0), variants: spellingsOf(present), isGroup: true })),
+    ...[...ix.keys].filter(([k]) => !ix.keyToGroup.has(k)).map(([k, e]) => ({ id: 'k:' + k, label: e.label, count: e.count, variants: [...e.spellings.keys()] }))
+  ].sort((a, b) => b.count - a.count);
+  const valid = new Set(items.map(i => i.id));
+  cgSelected = new Set([...cgSelected].filter(id => valid.has(id)));
+
+  html += '<div class="cgBox"><h3>Combine manually</h3><div class="cgList">';
+  items.forEach(it => {
+    const variants = it.variants.length > 1 ? `<div class="cgVariants">${esc(it.variants.slice(0, 4).join(' / '))}${it.variants.length > 4 ? ' …' : ''}</div>` : '';
+    html += `<label class="cgItem"><input type="checkbox" data-cg-pick="${esc(it.id)}"${cgSelected.has(it.id) ? ' checked' : ''}><span class="cgName">${it.isGroup ? '<span class="tag auto" style="margin-right:6px;">combined</span>' : ''}${esc(it.label)}${variants}</span>${cnt(it.count)}</label>`;
+  });
+  html += '</div>';
+  const biggest = items.find(i => cgSelected.has(i.id));
+  html += `<div class="controls" style="margin:10px 0 0;">
+      <input class="cgInput" id="cgName" placeholder="${esc(biggest ? biggest.label : 'Name for the combined type')}" value="${esc(cgNameDraft)}" aria-label="Name for the combined type">
+      <button class="btnPrimary btnSmall" id="cgCombineBtn" ${cgSelected.size < 2 ? 'disabled' : ''}>Combine ${cgSelected.size >= 2 ? cgSelected.size + ' selected' : 'selected'}</button>
+    </div>
+    <p class="sub" style="margin:6px 0 0;font-size:.75rem;">Tick two or more, then Combine. The name defaults to the largest one ticked.</p></div>`;
+
+  box.innerHTML = html;
+}
+
+function complaintsChanged(){
+  if (rows.length) render(); else renderComplaintPanel(null);
+}
+
+(function initComplaintPanel(){
+  const box = $('complaintPanel');
+  box.addEventListener('click', e => {
+    const t = e.target.closest('button');
+    if (!t || t.disabled) return;
+    if (t.dataset.cgCombine){
+      combineUnits(t.dataset.cgCombine.split(','), t.dataset.cgName);
+      complaintsChanged();
+    } else if (t.dataset.cgDismiss){
+      const d = loadDismissed(); d.add(t.dataset.cgDismiss); saveDismissed(d);
+      complaintsChanged();
+    } else if (t.dataset.cgUngroup !== undefined){
+      const g = loadGroups(); g.splice(Number(t.dataset.cgUngroup), 1); saveGroups(g);
+      complaintsChanged();
+    } else if (t.dataset.cgRemove){
+      const [gi, key] = [t.dataset.cgRemove.slice(0, t.dataset.cgRemove.indexOf('|')), t.dataset.cgRemove.slice(t.dataset.cgRemove.indexOf('|') + 1)];
+      const g = loadGroups();
+      if (g[gi]){ g[gi].members = g[gi].members.filter(m => m !== key); if (g[gi].members.length < 2) g.splice(Number(gi), 1); }
+      saveGroups(g);
+      complaintsChanged();
+    } else if (t.id === 'cgCombineBtn'){
+      const order = [...box.querySelectorAll('[data-cg-pick]')].map(i => i.dataset.cgPick).filter(id => cgSelected.has(id));
+      const name = ($('cgName').value.trim()) || $('cgName').placeholder;
+      combineUnits(order, name);
+      cgSelected.clear(); cgNameDraft = '';
+      complaintsChanged();
+    }
+  });
+  box.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.cgPick){
+      if (t.checked) cgSelected.add(t.dataset.cgPick); else cgSelected.delete(t.dataset.cgPick);
+      const keepScroll = box.querySelector('.cgList')?.scrollTop || 0;
+      renderComplaintPanel(cgLastIndex);
+      const list = box.querySelector('.cgList'); if (list) list.scrollTop = keepScroll;
+    } else if (t.dataset.cgRename !== undefined){
+      const g = loadGroups(), gi = Number(t.dataset.cgRename);
+      if (g[gi] && t.value.trim()){ g[gi].name = t.value.trim(); saveGroups(g); }
+      complaintsChanged();
+    }
+  });
+  box.addEventListener('input', e => { if (e.target.id === 'cgName') cgNameDraft = e.target.value; });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.cgRename !== undefined) e.target.blur();
+    if (e.key === 'Enter' && e.target.id === 'cgName' && !$('cgCombineBtn').disabled) $('cgCombineBtn').click();
+  });
+})();
+
+// "Combine similar types" link under the chart → open Settings at this section
+$('output').addEventListener('click', e => {
+  if (!e.target.closest('[data-open-complaints]')) return;
+  e.preventDefault();
+  openSettings();
+  $('complaintSection').scrollIntoView({ block: 'start' });
+});
+
 /* ---------- ticket dates ---------- */
 // "2026-10-08", "2026-10-08 14:05", "10/8/2026", "10/8/26 2:05 PM", ISO with timezone…  → ms, or null
 function parseDate(v){
@@ -972,6 +1280,7 @@ function rebuild(){
 
   const output = $('output');
   if (typeof checkAutoSnapshot === 'function' && !autoBusy) setTimeout(checkAutoSnapshot, 0);
+  if (!rows.length) renderComplaintPanel(null);
   if (!raw.length){
     setPreview('');
     output.innerHTML = sources.folder.files.length || sources.manual.files.length
@@ -1038,9 +1347,10 @@ function render(){
       const s = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase(); // "finished" and "Finished" are one status
       statuses[s] = (statuses[s]||0)+1;
     }
-    if (rc.complaint){ const c = val(r, rc.complaint) || '(blank)'; complaints[c] = (complaints[c]||0)+1; }
     totalSec += dur(r);
   });
+  const cIndex = buildComplaintIndex(rows);
+  cIndex.labelCounts.forEach((n, label) => { complaints[label] = n; });
 
   let html = '<div class="grid">';
   html += card('Total Tickets', rows.length.toLocaleString());
@@ -1128,7 +1438,11 @@ function render(){
   }
   if (has.complaint){
     const entries = Object.entries(complaints).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,value])=>({label,value}));
-    charts.push(chartCard('Top complaint types', hBarChartSVG(entries, {width:460, leftLabelWidth:140})));
+    const notes = [];
+    if (cIndex.blanks) notes.push(`${cIndex.blanks.toLocaleString()} ticket(s) with no complaint type left out.`);
+    if (cIndex.groups.length) notes.push(`${cIndex.groups.length} combined type(s).`);
+    notes.push('<a href="#" data-open-complaints>Combine similar types</a>');
+    charts.push(chartCard('Top complaint types', hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + `<div class="chartNote">${notes.join(' ')}</div>`));
   }
   if (has.customer){
     const custCounts = {};
@@ -1148,6 +1462,7 @@ function render(){
 
   $('output').innerHTML = html;
   renderCustomerPage();
+  renderComplaintPanel(has.complaint ? cIndex : 'none');
 
   // data preview (in Settings): union of every header across all loaded rows
   const headerSet = new Set();

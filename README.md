@@ -4,7 +4,7 @@ A single-file HTML dashboard for ticket export CSVs. Open `ticket-dashboard.html
 
 ## Features
 - Load data from a OneDrive/SharePoint-synced folder (auto-refresh at a selectable interval) or by uploading CSVs
-- Totals, per-agent and per-customer breakdowns (latest ticket date, paged 10 at a time, Competency / Training Rating), complaint types, top-5 customer pie chart
+- Totals, per-agent and per-customer breakdowns (latest ticket date, paged 10 at a time, Competency / Training Rating), complaint types (combinable, blanks ignored), top-5 customer pie chart
 - Metrics log with manual and scheduled automatic snapshots, exportable as CSV
 - Light and dark themes
 
@@ -13,5 +13,6 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.11 | Combine complaint types: automatic merging of spelling variants, suggested and manual combinations in Settings, blank complaints ignored |
 | 2.10 | Per-customer breakdown shows each customer's latest ticket date, sorted newest first, 10 per page with Newer/Older paging |
 | 2.9 | Competency / Training Rating column in the per-customer breakdown |
