@@ -90,6 +90,13 @@ svg text.pieLabel{fill:#fff;font-size:13px;font-weight:600;}
 .cgSuggest .cgWhat{flex:1;min-width:200px;}
 .btnSmall{font-size:.78rem;padding:4px 10px;}
 .chartNote{color:var(--sub);font-size:.75rem;margin-top:6px;}
+.chartHead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;}
+.chartHead h2{margin:0;}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.seg button{border:none;border-radius:0;padding:4px 12px;font-size:.78rem;background:transparent;color:var(--sub);}
+.seg button + button{border-left:1px solid var(--border);}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;}
+.seg button:disabled{opacity:.4;}
 .trendHead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
 .trendHead h2{margin:0;}
 .trendLink{color:var(--accent);font-size:.82rem;}
@@ -382,8 +389,8 @@ function hBarChartSVG(entries, opts){
   entries.forEach((e, i) => {
     const y = gap + i * (barHeight + gap);
     const w = Math.max(2, (e.value / maxVal) * chartWidth);
-    svg += `<text x="${leftLabelWidth - 10}" y="${y + barHeight/2 + 4}" text-anchor="end"><title>${esc(e.label)}</title>${esc(truncate(e.label, maxChars))}</text>`;
-    svg += `<rect class="bar" x="${leftLabelWidth}" y="${y}" width="${w}" height="${barHeight}" rx="4"></rect>`;
+    svg += `<text x="${leftLabelWidth - 10}" y="${y + barHeight/2 + 4}" text-anchor="end"><title>${esc(e.tip || e.label)}</title>${esc(truncate(e.label, maxChars))}</text>`;
+    svg += `<rect class="bar" x="${leftLabelWidth}" y="${y}" width="${w}" height="${barHeight}" rx="4"><title>${esc(e.tip || (e.label + ': ' + e.value.toLocaleString()))}</title></rect>`;
     svg += `<text x="${leftLabelWidth + w + 8}" y="${y + barHeight/2 + 4}">${e.value.toLocaleString()}</text>`;
   });
   return svg + `</svg>`;
@@ -908,8 +915,10 @@ function detectColsFromHeaders(headers){
     ticketId:  pick(headers, ['ticketid','ticketnumber','ticketno','ticket','id'], /ticket.*(id|num|no\b)|^id$/i),
     agent:     pick(headers, ['agent','agentname','assignedagent','assignee'], /agent|assignee/i, /user.?agent/i),
     customer:  pick(headers, ['customer','customername','client','clientname'], /customer|client/i),
-    complaint: pick(headers, ['complaint','complainttype','issue','issuetype','subject','reason','category'],
-                    /complaint|issue|subject|reason|category/i, /date|time/i),
+    complaint: pick(headers, ['complaint','complainttype','issue','issuetype','subject','reason'],
+                    /complaint|issue|subject|reason/i, /date|time|categor/i),
+    // complaint category (a broader grouping than the complaint type), e.g. "Category", "Complaint Category"
+    category:  pick(headers, ['category','complaintcategory','issuecategory','ticketcategory','categoryname'], /categor/i, /date|time/i),
     status:    pick(headers, ['status','event','state','ticketstatus','eventtype'], /status|event|state/i, /date|time|statement|estate/i),
     duration,
     durationUnit: unit,
@@ -936,7 +945,7 @@ function rowCols(row){
   return c;
 }
 function anyColsPresent(list){
-  const out = { ticketId:false, agent:false, customer:false, complaint:false, status:false, duration:false, rating:false, date:false };
+  const out = { ticketId:false, agent:false, customer:false, complaint:false, category:false, status:false, duration:false, rating:false, date:false };
   const seen = new Set();
   for (const r of list){
     const rc = rowCols(r);
@@ -1044,6 +1053,18 @@ function complaintCore(raw){
   return core || words.join('');
 }
 
+// The label shown for a set of variants: the most common spelling, but a capitalised
+// "Billing" beats a more frequent "billing", and stray spaces are dropped.
+function bestSpelling(spellings){
+  const sorted = [...spellings].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([s]) => String(s).trim().replace(/\s+/g, ' '));
+  const top = sorted[0];
+  if (top === top.toLowerCase()){
+    const cap = sorted.find(s => s.toLowerCase() === top && s !== top);
+    if (cap) return cap;
+    return top.charAt(0).toUpperCase() + top.slice(1);
+  }
+  return top;
+}
 function loadGroups(){
   try {
     const g = JSON.parse(localStorage.getItem(CG_KEY) || '[]');
@@ -1071,7 +1092,7 @@ function buildComplaintIndex(list){
     e.count++;
     e.spellings.set(raw, (e.spellings.get(raw) || 0) + 1);
   });
-  keys.forEach(e => { e.label = [...e.spellings].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]; });
+  keys.forEach(e => { e.label = bestSpelling(e.spellings); });
 
   const groups = loadGroups();
   const keyToGroup = new Map();
@@ -1501,6 +1522,26 @@ function setPreview(html){
   $('previewWrap').innerHTML = html || '<p class="empty">No data loaded yet.</p>';
 }
 
+/* ---------- Top complaints: Category / Type switch ---------- */
+const CVIEW_KEY = 'ticketDashboardComplaintView';
+let complaintViews = { category: null, type: null };
+function showComplaintView(){
+  const body = $('complaintBody');
+  if (!body) return;
+  let pref = null;
+  try { pref = localStorage.getItem(CVIEW_KEY); } catch (e) {}
+  // use the saved choice if that view exists in this data; otherwise whichever one does (category first)
+  const view = complaintViews[pref] ? pref : (complaintViews.category ? 'category' : 'type');
+  body.innerHTML = complaintViews[view];
+  document.querySelectorAll('#complaintCard [data-cview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cview === view)));
+}
+$('output').addEventListener('click', e => {
+  const b = e.target.closest('[data-cview]');
+  if (!b || b.disabled) return;
+  try { localStorage.setItem(CVIEW_KEY, b.dataset.cview); } catch (err) {}
+  showComplaintView();
+});
+
 function card(label, value){
   return `<div class="card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`;
 }
@@ -1609,13 +1650,54 @@ function render(){
     const entries = Object.entries(statuses).sort((a,b)=>b[1]-a[1]).map(([label,value])=>({label,value}));
     charts.push(chartCard('Status breakdown', hBarChartSVG(entries, {width:460, leftLabelWidth:120})));
   }
+  // Top complaints: one chart with a Category / Type switch
+  complaintViews = { category: null, type: null };
   if (has.complaint){
     const entries = Object.entries(complaints).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,value])=>({label,value}));
     const notes = [];
     if (cIndex.blanks) notes.push(`${cIndex.blanks.toLocaleString()} ticket(s) with no complaint type left out.`);
     if (cIndex.groups.length) notes.push(`${cIndex.groups.length} combined type(s).`);
     notes.push('<a href="#" data-open-complaints>Combine similar types</a>');
-    charts.push(chartCard('Top complaint types', hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + `<div class="chartNote">${notes.join(' ')}</div>`));
+    complaintViews.type = hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + `<div class="chartNote">${notes.join(' ')}</div>`;
+  }
+  if (has.category){
+    // categories get the same automatic tidying as types (capitals, spacing, plurals, blanks), keyed the same way
+    const cats = new Map(); let catBlanks = 0;
+    rows.forEach(r => {
+      const rc = rowCols(r);
+      if (!rc.category) return;
+      const raw = val(r, rc.category), k = complaintKey(raw);
+      if (!k){ catBlanks++; return; }
+      let c = cats.get(k);
+      if (!c){ c = { count: 0, spellings: new Map(), types: new Map() }; cats.set(k, c); }
+      c.count++;
+      c.spellings.set(raw, (c.spellings.get(raw) || 0) + 1);
+      // which complaint types sit inside this category (shown on hover); same column as the category → nothing to show
+      if (rc.complaint && rc.complaint !== rc.category){
+        const tk = complaintKey(val(r, rc.complaint));
+        if (tk){
+          const gi = cIndex.keyToGroup.get(tk);
+          const tLabel = gi !== undefined ? cIndex.groups[gi].name : (cIndex.keys.get(tk) || {}).label || val(r, rc.complaint);
+          c.types.set(tLabel, (c.types.get(tLabel) || 0) + 1);
+        }
+      }
+    });
+    const entries = [...cats.values()].map(c => {
+      const label = bestSpelling(c.spellings);
+      const top = [...c.types].sort((a, b) => b[1] - a[1]);
+      const tip = `${label}: ${c.count.toLocaleString()}` + (top.length ? '\n' + top.slice(0, 5).map(([t, n]) => `  ${t} — ${n.toLocaleString()} (${Math.round(n / c.count * 100)}%)`).join('\n') + (top.length > 5 ? `\n  +${top.length - 5} more type(s)` : '') : '');
+      return { label, value: c.count, tip };
+    }).sort((a, b) => b.value - a.value).slice(0, 8);
+    const notes = [];
+    if (catBlanks) notes.push(`${catBlanks.toLocaleString()} ticket(s) with no category left out.`);
+    if (has.complaint) notes.push('Hover a bar to see the complaint types inside it.');
+    complaintViews.category = hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + (notes.length ? `<div class="chartNote">${notes.join(' ')}</div>` : '');
+  }
+  if (complaintViews.type || complaintViews.category){
+    charts.push(`<div class="chartCard" id="complaintCard"><div class="chartHead"><h2>Top complaints</h2><div class="seg" role="group" aria-label="Show complaints by">
+        <button data-cview="category"${complaintViews.category ? '' : ' disabled title="No category column in the loaded files"'}>Category</button>
+        <button data-cview="type"${complaintViews.type ? '' : ' disabled title="No complaint type column in the loaded files"'}>Type</button>
+      </div></div><div class="chartWrap" id="complaintBody"></div></div>`);
   }
   if (has.customer){
     const custCounts = {};
@@ -1635,6 +1717,7 @@ function render(){
 
   $('output').innerHTML = html;
   $('tables').innerHTML = tables;
+  showComplaintView();
   renderCustomerPage();
   renderComplaintPanel(has.complaint ? cIndex : 'none');
 
