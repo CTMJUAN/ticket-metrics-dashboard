@@ -30,6 +30,13 @@ p.sub{margin:0 0 20px;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
 .card .label{font-size:.75rem;color:var(--sub);text-transform:uppercase;letter-spacing:.03em;}
 .card .value{font-size:1.5rem;font-weight:600;margin-top:4px;}
+.card .cardSub{font-size:.75rem;color:var(--sub);margin-top:2px;}
+.kpiHead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:20px 0 -8px;}
+.dayNav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.dayNav button{padding:3px 10px;font-size:.9rem;line-height:1.2;}
+.dayNav .btnSmall{font-size:.75rem;}
+.dayName{font-size:.88rem;font-weight:600;min-width:0;}
+.dayName.sub{font-weight:400;}
 .section{margin:28px 0;}
 .section h2{font-size:1rem;margin:0 0 10px;color:var(--text);}
 .chartRow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:stretch;}
@@ -1522,6 +1529,83 @@ function setPreview(html){
   $('previewWrap').innerHTML = html || '<p class="empty">No data loaded yet.</p>';
 }
 
+/* ---------- summary cards: Daily / Cumulative ---------- */
+const KPI_MODE_KEY = 'ticketDashboardKpiMode';
+let kpi = null, kpiDay = null; // kpiDay: the day being viewed in Daily mode (kept across refreshes)
+function dayLabel(k){
+  const today = dateKey(new Date());
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const [Y, M, D] = k.split('-').map(Number);
+  const nice = new Date(Y, M - 1, D).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  return k === today ? `Today, ${nice}` : k === dateKey(y) ? `Yesterday, ${nice}` : nice;
+}
+function renderKpis(){
+  const area = $('kpiArea');
+  if (!area || !kpi) return;
+  const canDaily = kpi.dayKeys.length > 0;
+  let mode = 'cumulative';
+  try { mode = localStorage.getItem(KPI_MODE_KEY) === 'daily' ? 'daily' : 'cumulative'; } catch (e) {}
+  if (!canDaily) mode = 'cumulative';
+  // default day: today if it has tickets, otherwise the latest day that does
+  const today = dateKey(new Date());
+  if (!kpiDay || !kpi.days.has(kpiDay)) kpiDay = kpi.days.has(today) ? today : kpi.dayKeys[kpi.dayKeys.length - 1] || null;
+  const i = kpi.dayKeys.indexOf(kpiDay);
+
+  const fmtRange = () => {
+    if (!canDaily) return 'All loaded tickets';
+    const a = new Date(kpi.firstMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const b = new Date(kpi.lastMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return a === b ? a : `${a} – ${b}`;
+  };
+  let head = '<div class="kpiHead">';
+  if (mode === 'daily'){
+    head += `<div class="dayNav" role="group" aria-label="Day shown">
+      <button data-kpiday="prev" ${i <= 0 ? 'disabled' : ''} aria-label="Previous day with tickets">‹</button>
+      <span class="dayName">${esc(dayLabel(kpiDay))}</span>
+      <button data-kpiday="next" ${i >= kpi.dayKeys.length - 1 ? 'disabled' : ''} aria-label="Next day with tickets">›</button>
+      ${kpiDay !== today && kpi.days.has(today) ? '<button data-kpiday="today" class="btnSmall">Today</button>' : ''}
+      ${kpiDay !== kpi.dayKeys[kpi.dayKeys.length - 1] && !kpi.days.has(today) ? '<button data-kpiday="latest" class="btnSmall">Latest</button>' : ''}
+    </div>`;
+  } else {
+    head += `<div class="dayNav"><span class="dayName sub">${esc(fmtRange())}</span></div>`;
+  }
+  head += `<div class="seg" role="group" aria-label="Summary totals">
+      <button data-kpimode="daily" aria-pressed="${mode === 'daily'}"${canDaily ? '' : ' disabled title="Needs a ticket date column (e.g. Date, Finished, Closed)"'}>Daily</button>
+      <button data-kpimode="cumulative" aria-pressed="${mode === 'cumulative'}">Cumulative</button>
+    </div></div>`;
+
+  const d = mode === 'daily' ? kpi.days.get(kpiDay) : null;
+  const sub = (txt) => `<div class="cardSub">${esc(txt)}</div>`;
+  const c = (label, value, subTxt) => `<div class="card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div>${subTxt ? sub(subTxt) : ''}</div>`;
+  let cards = '<div class="grid">';
+  if (d){
+    cards += c('Tickets', d.tickets.toLocaleString(), `of ${kpi.total.tickets.toLocaleString()} total`);
+    if (kpi.has.customer) cards += c('Customers Helped', d.customers.size.toLocaleString(), `of ${kpi.total.customers.toLocaleString()} total`);
+    if (kpi.has.duration) cards += c('Hours', secondsToHours(d.sec), `of ${secondsToHours(kpi.total.sec)} total`);
+  } else {
+    cards += c('Total Tickets', kpi.total.tickets.toLocaleString(), kpi.undated && canDaily ? `incl. ${kpi.undated.toLocaleString()} without a date` : '');
+    if (kpi.has.customer) cards += c('Total Customers Helped', kpi.total.customers.toLocaleString());
+    if (kpi.has.duration) cards += c('Total Hours', secondsToHours(kpi.total.sec));
+  }
+  // these two always cover everything loaded
+  if (kpi.has.agent) cards += c('Unique Agents', kpi.agents.toLocaleString(), mode === 'daily' ? 'all days' : '');
+  if (kpi.has.duration) cards += c('Avg Time / Ticket', secondsToHms(kpi.avgSec), mode === 'daily' ? 'all days' : '');
+  cards += '</div>';
+  area.innerHTML = head + cards;
+}
+$('output').addEventListener('click', e => {
+  const m = e.target.closest('[data-kpimode]');
+  if (m && !m.disabled){ try { localStorage.setItem(KPI_MODE_KEY, m.dataset.kpimode); } catch (err) {} renderKpis(); return; }
+  const dbtn = e.target.closest('[data-kpiday]');
+  if (!dbtn || dbtn.disabled || !kpi) return;
+  const keys = kpi.dayKeys, i = keys.indexOf(kpiDay);
+  const go = dbtn.dataset.kpiday;
+  kpiDay = go === 'prev' ? keys[Math.max(0, i - 1)] : go === 'next' ? keys[Math.min(keys.length - 1, i + 1)]
+         : go === 'today' ? dateKey(new Date()) : keys[keys.length - 1];
+  renderKpis();
+  $('kpiArea').querySelector(`[data-kpiday="${go}"]:not([disabled])`)?.focus();
+});
+
 /* ---------- Top complaints: Category / Type switch ---------- */
 const CVIEW_KEY = 'ticketDashboardComplaintView';
 let complaintViews = { category: null, type: null };
@@ -1542,19 +1626,26 @@ $('output').addEventListener('click', e => {
   showComplaintView();
 });
 
-function card(label, value){
-  return `<div class="card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`;
-}
 
 function render(){
   const has = anyColsPresent(rows);
   const agents = new Set(), customers = new Set(), statuses = {}, complaints = {};
   let totalSec = 0;
+  const days = new Map(); // "2026-10-09" → { tickets, customers:Set, sec }
+  let firstMs = Infinity, lastMs = -Infinity, undated = 0;
   rows.forEach(r => {
     const rc = rowCols(r);
     const a = val(r, rc.agent), cu = val(r, rc.customer);
     if (a) agents.add(a);
     if (cu) customers.add(cu);
+    const ms = rc.date ? parseDate(val(r, rc.date)) : null;
+    if (ms !== null){
+      const k = dateKey(new Date(ms));
+      let d = days.get(k);
+      if (!d){ d = { tickets: 0, customers: new Set(), sec: 0 }; days.set(k, d); }
+      d.tickets++; if (cu) d.customers.add(cu); d.sec += dur(r);
+      if (ms < firstMs) firstMs = ms; if (ms > lastMs) lastMs = ms;
+    } else undated++;
     if (rc.status){
       const s = statusLabel(val(r, rc.status)); // "Finished", "finished" and "Ticket_finished" are one status
       statuses[s] = (statuses[s]||0)+1;
@@ -1564,13 +1655,10 @@ function render(){
   const cIndex = buildComplaintIndex(rows);
   cIndex.labelCounts.forEach((n, label) => { complaints[label] = n; });
 
-  let html = '<div class="grid">';
-  html += card('Total Tickets', rows.length.toLocaleString());
-  if (has.customer) html += card('Total Customers Helped', customers.size.toLocaleString());
-  if (has.duration) html += card('Total Hours', secondsToHours(totalSec));
-  if (has.agent) html += card('Unique Agents', agents.size.toLocaleString());
-  if (has.duration) html += card('Avg Time / Ticket', secondsToHms(totalSec / rows.length));
-  html += '</div>';
+  // summary cards are drawn by renderKpis() so the Daily / Cumulative switch can redraw just them
+  kpi = { has, total: { tickets: rows.length, customers: customers.size, sec: totalSec }, agents: agents.size,
+          avgSec: totalSec / rows.length, days, dayKeys: [...days.keys()].sort(), firstMs, lastMs, undated };
+  let html = '<div id="kpiArea"></div>';
 
   // per-agent and per-customer tables go below the Metrics over time graph
   let tables = '';
@@ -1716,6 +1804,7 @@ function render(){
   if (charts.length) html += `<div class="section chartRow">${charts.join('')}</div>`;
 
   $('output').innerHTML = html;
+  renderKpis();
   $('tables').innerHTML = tables;
   showComplaintView();
   renderCustomerPage();

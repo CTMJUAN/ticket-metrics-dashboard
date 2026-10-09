@@ -13,6 +13,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.19 | Summary cards: Daily / Cumulative switch for tickets, customers and hours, with day-by-day navigation |
 | 2.18 | Top complaints chart with a Category / Type switch (category column read automatically; hover a category to see its types); capitalised labels preferred |
 | 2.17 | Main page order: summary cards → charts → Metrics over time → per-agent and per-customer breakdowns |
 | 2.16 | Snapshot graph: choose lines (Tickets, Customers, Agents, Hours worked), points spaced by real date; import metrics-log CSVs (merged, duplicates skipped, older formats and Excel-resaved files OK); delete single snapshots |
