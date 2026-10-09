@@ -146,6 +146,8 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
   <div id="trendChart"></div>
 </div>
 
+<div id="tables"></div>
+
 <!-- Settings overlay: synced folder, manual upload, data preview, theme and log live here to keep the front page uncluttered -->
 <div id="settingsOverlay" class="settingsOverlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
   <div class="settingsPanel">
@@ -1382,7 +1384,7 @@ function renderCustomerPage(){
 }
 
 // the dashboard is redrawn with innerHTML, so pager clicks are handled once, by delegation
-$('output').addEventListener('click', e => {
+$('tables').addEventListener('click', e => {
   const btn = e.target.closest('[data-cust-page]');
   if (!btn || btn.disabled) return;
   const pages = Math.max(1, Math.ceil(custList.length / CUST_PAGE_SIZE));
@@ -1448,6 +1450,7 @@ function rebuild(){
   $('logBtn').disabled = !rows.length;
 
   const output = $('output');
+  if (!rows.length) $('tables').innerHTML = '';
   if (typeof checkAutoSnapshot === 'function' && !autoBusy) setTimeout(checkAutoSnapshot, 0);
   if (!rows.length) renderComplaintPanel(null);
   if (!raw.length){
@@ -1528,9 +1531,11 @@ function render(){
   if (has.duration) html += card('Avg Time / Ticket', secondsToHms(totalSec / rows.length));
   html += '</div>';
 
+  // per-agent and per-customer tables go below the Metrics over time graph
+  let tables = '';
   if (has.agent){
-    html += '<div class="section"><h2>Per-agent breakdown</h2><div class="tableWrap"><table><thead><tr>';
-    html += '<th>Agent</th><th>Tickets</th><th>Unique Customers</th><th>Total Hours</th><th>Avg Time / Ticket</th></tr></thead><tbody>';
+    tables += '<div class="section"><h2>Per-agent breakdown</h2><div class="tableWrap"><table><thead><tr>';
+    tables += '<th>Agent</th><th>Tickets</th><th>Unique Customers</th><th>Total Hours</th><th>Avg Time / Ticket</th></tr></thead><tbody>';
     const agentStats = new Map();
     rows.forEach(r => {
       const rc = rowCols(r);
@@ -1543,9 +1548,9 @@ function render(){
       s.sec += dur(r);
     });
     [...agentStats].sort((a,b)=>b[1].sec-a[1].sec || b[1].tickets-a[1].tickets).forEach(([agent,s]) => {
-      html += `<tr><td>${esc(agent)}</td><td>${s.tickets}</td><td>${s.customers.size}</td><td>${secondsToHours(s.sec)}</td><td>${secondsToHms(s.sec/s.tickets)}</td></tr>`;
+      tables += `<tr><td>${esc(agent)}</td><td>${s.tickets}</td><td>${s.customers.size}</td><td>${secondsToHours(s.sec)}</td><td>${secondsToHms(s.sec/s.tickets)}</td></tr>`;
     });
-    html += '</tbody></table></div></div>';
+    tables += '</tbody></table></div></div>';
   }
 
   if (has.customer){
@@ -1578,20 +1583,20 @@ function render(){
         ? ((b[1].last ? b[1].last.ms : -Infinity) - (a[1].last ? a[1].last.ms : -Infinity)) || b[1].tickets - a[1].tickets
         : b[1].agents.size - a[1].agents.size || b[1].sec - a[1].sec);
 
-    html += '<div class="section"><h2>Per-customer breakdown</h2>';
-    html += `<p class="sub" style="margin-bottom:8px;">${custHasDates
+    tables += '<div class="section"><h2>Per-customer breakdown</h2>';
+    tables += `<p class="sub" style="margin-bottom:8px;">${custHasDates
       ? 'Most recent ticket first, 10 customers per page \u2014 use <strong>Older</strong> to page back to earlier tickets.'
       : 'Sorted by number of different agents involved, so shared/simultaneous cases surface first. 10 customers per page.'}</p>`;
-    html += '<div id="custTable"></div>';
+    tables += '<div id="custTable"></div>';
     if (!custHasDates){
-      html += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No ticket date column found in the loaded files. Dates are read from a column such as \u201cDate\u201d, \u201cFinished\u201d, \u201cClosed\u201d or \u201cCreated\u201d.</p>';
+      tables += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No ticket date column found in the loaded files. Dates are read from a column such as \u201cDate\u201d, \u201cFinished\u201d, \u201cClosed\u201d or \u201cCreated\u201d.</p>';
     }
     if (!has.rating){
-      html += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No rating column found in the loaded files. Ratings are read from a column whose header contains \u201cCompetency\u201d or \u201cTraining\u201d (e.g. \u201cCompetency / Training Rating\u201d), with values 1\u20135.</p>';
+      tables += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No rating column found in the loaded files. Ratings are read from a column whose header contains \u201cCompetency\u201d or \u201cTraining\u201d (e.g. \u201cCompetency / Training Rating\u201d), with values 1\u20135.</p>';
     } else if (badRatings){
-      html += `<p class="sub warn" style="margin:8px 0 0;font-size:.8rem;">${badRatings.toLocaleString()} rating value(s) weren\u2019t a number from 1 to 5 and were left out of the averages.</p>`;
+      tables += `<p class="sub warn" style="margin:8px 0 0;font-size:.8rem;">${badRatings.toLocaleString()} rating value(s) weren\u2019t a number from 1 to 5 and were left out of the averages.</p>`;
     }
-    html += '</div>';
+    tables += '</div>';
   } else {
     custList = [];
   }
@@ -1629,6 +1634,7 @@ function render(){
   if (charts.length) html += `<div class="section chartRow">${charts.join('')}</div>`;
 
   $('output').innerHTML = html;
+  $('tables').innerHTML = tables;
   renderCustomerPage();
   renderComplaintPanel(has.complaint ? cIndex : 'none');
 

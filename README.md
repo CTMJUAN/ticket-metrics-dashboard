@@ -13,6 +13,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.17 | Main page order: summary cards → charts → Metrics over time → per-agent and per-customer breakdowns |
 | 2.16 | Snapshot graph: choose lines (Tickets, Customers, Agents, Hours worked), points spaced by real date; import metrics-log CSVs (merged, duplicates skipped, older formats and Excel-resaved files OK); delete single snapshots |
 | 2.15 | Snapshot graph: Hours worked on its own right-hand scale, labelled axes, value dots with hover, latest values in the legend |
 | 2.14 | Snapshot graph (Metrics over time) back on the main page; snapshot buttons, schedule and log table stay in Settings |
