@@ -222,6 +222,13 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
       <div id="complaintPanel"><p class="empty">Load data to see complaint types.</p></div>
     </div>
 
+    <div class="section" id="filterSection">
+      <h2>Data filters</h2>
+      <label class="autoLabel"><input type="checkbox" id="excludeTest" checked> Leave out tickets labelled “test”</label>
+      <p class="sub" style="margin:6px 0 0;font-size:.8rem;">A ticket is left out when its customer, complaint, category or agent is “test”, “testing”, “test ticket” or a numbered one like “test 2” (any capitals). Labels that only contain the word, like “Self-test fault”, are kept.</p>
+      <div id="testList" class="sub" style="margin-top:6px;font-size:.8rem;"></div>
+    </div>
+
     <div class="section">
       <h2>Data preview (first 50 rows)</h2>
       <p class="sub" style="margin-top:-6px;">The raw rows behind the dashboard, after non-Finished and duplicate rows are removed.</p>
@@ -985,6 +992,27 @@ const statusLabel = memo(function statusLabel(v){
   if (!s) return '(blank)';
   return s.charAt(0).toUpperCase() + s.slice(1);
 });
+// "test", "Testing", "TEST TICKET", "test 2", "test#3", "test-ticket" → true; "Self-test fault", "Contest" → false
+const isTestLabel = memo(v => /^(test(ing)?|test[\s_-]*ticket)(\s*[#-]?\s*\d+)?$/i.test(String(v ?? '').trim()));
+const EXCLUDE_TEST_KEY = 'ticketDashboardExcludeTest';
+function excludeTestOn(){ try { return localStorage.getItem(EXCLUDE_TEST_KEY) !== 'off'; } catch (e) { return true; } }
+function testLabelOf(r){
+  const rc = rowCols(r);
+  for (const [f, name] of [['customer', 'customer'], ['complaint', 'complaint'], ['category', 'category'], ['agent', 'agent']]){
+    if (rc[f] && isTestLabel(r[rc[f]])){
+      return { field: name, value: String(r[rc[f]]).trim(), id: rc.ticketId ? String(r[rc.ticketId] ?? '').trim() : '', agent: rc.agent ? String(r[rc.agent] ?? '').trim() : '' };
+    }
+  }
+  return null;
+}
+function renderTestList(hits){
+  const el = $('testList');
+  if (!excludeTestOn()){ el.textContent = 'Test tickets are currently included in all totals.'; return; }
+  if (!hits.length){ el.textContent = 'No test tickets in the loaded data.'; return; }
+  const shown = hits.slice(0, 8).map(h => `${h.id ? '#' + h.id : 'ticket'}${h.agent && h.field !== 'agent' ? ' (' + h.agent + ')' : ''} \u2014 ${h.field} \u201c${h.value}\u201d`);
+  el.innerHTML = `<strong>${hits.length.toLocaleString()} test ticket(s) left out:</strong> ${esc(shown.join(' · '))}${hits.length > 8 ? ` \u2026and ${hits.length - 8} more` : ''}`;
+}
+
 // work-log event names from the tracker: ticket_started, ticket_finished, ticket_edited, competency_rated, …
 const isLogEvent = memo(v => /^(ticket|competency)_[a-z_]+$/i.test(String(v ?? '').trim()));
 const isFinished = memo(function isFinished(v){
@@ -1487,9 +1515,17 @@ function rebuild(){
     finished.push(changed ? merged : r);
   }
 
+  // leave out test tickets (a label that *is* "test", not one that merely contains it)
+  const testHits = [];
+  const kept = excludeTestOn() ? finished.filter(r => {
+    const hit = testLabelOf(r);
+    if (hit){ testHits.push(hit); return false; }
+    return true;
+  }) : finished;
+
   // collapse repeated event rows for the same ticket + agent
   const seen = new Set();
-  rows = finished.filter(r => {
+  rows = kept.filter(r => {
     const rc = rowCols(r);
     const id = rc.ticketId ? String(r[rc.ticketId] ?? '').trim() : '';
     if (!id) return true;
@@ -1508,7 +1544,8 @@ function rebuild(){
     durSec.set(r, secs);
   });
 
-  lastStats = { excludedStatus: raw.length - finished.length - deletedAfter, excludedDupes: finished.length - rows.length, unreadableDurations: unreadable, deletedAfter, updatedFromLog };
+  lastStats = { excludedStatus: raw.length - finished.length - deletedAfter, excludedDupes: kept.length - rows.length, unreadableDurations: unreadable, deletedAfter, updatedFromLog, testExcluded: testHits.length };
+  renderTestList(testHits);
 
   renderFileList();
   updateDataSourceSummary();
@@ -1544,6 +1581,7 @@ function renderFileList(){
   if (lastStats.excludedStatus) notes.push(`${lastStats.excludedStatus.toLocaleString()} non-Finished row(s) excluded`);
   if (lastStats.excludedDupes) notes.push(`${lastStats.excludedDupes.toLocaleString()} duplicate event row(s) for already-counted tickets collapsed`);
   if (lastStats.updatedFromLog) notes.push(`${lastStats.updatedFromLog.toLocaleString()} finished ticket(s) updated with a later rating or edit from the work log`);
+  if (lastStats.testExcluded) notes.push(`${lastStats.testExcluded.toLocaleString()} test ticket(s) left out`);
   if (lastStats.deletedAfter) notes.push(`${lastStats.deletedAfter.toLocaleString()} ticket(s) left out because they were deleted after finishing`);
   if (notes.length) txt += ` <span>(${notes.join('; ')})</span>`;
   if (lastStats.unreadableDurations) txt += `<div class="warn" style="margin-top:4px;">${lastStats.unreadableDurations.toLocaleString()} ticket(s) have a duration value that couldn't be read and were counted as 0 time.</div>`;
@@ -2206,6 +2244,11 @@ async function checkAutoSnapshotInner(){
 })();
 
 /* ---------- start-up ---------- */
+$('excludeTest').checked = excludeTestOn();
+$('excludeTest').addEventListener('change', e => {
+  try { localStorage.setItem(EXCLUDE_TEST_KEY, e.target.checked ? 'on' : 'off'); } catch (err) {}
+  rebuild();
+});
 updateDataSourceSummary();
 renderLog();
 if (fsSupported){
