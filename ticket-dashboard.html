@@ -65,6 +65,11 @@ svg text.pieLabel{fill:#fff;font-size:13px;font-weight:600;}
 .pip.on{background:var(--accent);}
 .ratingRange{color:var(--sub);font-size:.75rem;margin-left:6px;}
 .ratingNone{color:var(--sub);}
+.dateSince{color:var(--sub);font-size:.72rem;margin-top:2px;}
+.pager{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.pager button{padding:5px 11px;}
+.pagerInfo{color:var(--sub);font-size:.8rem;margin:0 6px;}
+@media (max-width:600px){.pager{justify-content:center;}}
 .chartWrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;}
 .tableWrap{overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:12px;background:var(--card);}
 table{border-collapse:collapse;width:100%;font-size:.82rem;min-width:480px;}
@@ -760,6 +765,9 @@ function detectColsFromHeaders(headers){
     status:    pick(headers, ['status','event','state','ticketstatus','eventtype'], /status|event|state/i, /date|time|statement|estate/i),
     duration,
     durationUnit: unit,
+    // when the ticket happened: prefer finish/close time, then a generic date, then created/start
+    date:      pick(headers, ['finished','finishedat','finisheddate','finishtime','finishedtime','closed','closedat','closeddate','resolvedat','resolveddate','completedat','completeddate','enddate','endtime','date','ticketdate','eventdate','datetime','createdat','createddate','created','opened','openeddate','started','startedat','startdate','starttime','timestamp'],
+                    /date|finish|closed|resolved|completed|created|opened|start|timestamp/i, /duration|elapsed|spent|handle|status|state/i),
     // per-customer 1–5 rating; deliberately NOT a bare "Rating" match, so a CSAT/satisfaction column isn't picked up by mistake
     rating:    pick(headers, ['competencytrainingrating','competencyrating','trainingrating','competencytraining','competency','training','traininglevel','competencylevel','proficiency'],
                     /competen|training|proficien|skill.?level/i)
@@ -774,7 +782,7 @@ function rowCols(row){
   return c;
 }
 function anyColsPresent(list){
-  const out = { ticketId:false, agent:false, customer:false, complaint:false, status:false, duration:false, rating:false };
+  const out = { ticketId:false, agent:false, customer:false, complaint:false, status:false, duration:false, rating:false, date:false };
   const seenSigs = new Set();
   list.forEach(r => {
     const sig = Object.keys(r).join('\u0001');
@@ -829,6 +837,87 @@ function parseRating(v){
   const n = parseFloat(m[1]);
   return n >= 1 && n <= 5 ? n : null;
 }
+/* ---------- ticket dates ---------- */
+// "2026-10-08", "2026-10-08 14:05", "10/8/2026", "10/8/26 2:05 PM", ISO with timezone…  → ms, or null
+function parseDate(v){
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+  if (m) return mkLocal(+m[1], +m[2], +m[3], m[4], m[5], m[6]); // date-only ISO must be LOCAL, or it shows as the previous day
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})(?:,?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]\.?m\.?)?)?$/i);
+  if (m){
+    let y = +m[3]; if (y < 100) y += 2000;
+    let h = m[4] !== undefined ? +m[4] : undefined;
+    if (h !== undefined && m[7]){ const pm = /^p/i.test(m[7]); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
+    return mkLocal(y, +m[1], +m[2], h, m[5], m[6]); // US month/day/year
+  }
+  const t = Date.parse(s); // anything else the browser understands (e.g. ISO with Z / offset)
+  return isNaN(t) ? null : t;
+}
+function mkLocal(y, mo, d, h, mi, se){
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(y, mo - 1, d, +(h || 0), +(mi || 0), +(se || 0));
+  return dt.getMonth() === mo - 1 ? dt.getTime() : null; // rejects e.g. 2/31
+}
+const dateHasTime = v => /\d:\d{2}/.test(String(v ?? ''));
+function fmtDate(ms, withTime){
+  const d = new Date(ms);
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return withTime ? `${date}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : date;
+}
+
+/* ---------- per-customer table, 10 per page ---------- */
+const CUST_PAGE_SIZE = 10;
+let custList = [], custPage = 0, custHasDates = false;
+
+function renderCustomerPage(){
+  const box = $('custTable');
+  if (!box) return;
+  const pages = Math.max(1, Math.ceil(custList.length / CUST_PAGE_SIZE));
+  custPage = Math.min(Math.max(custPage, 0), pages - 1); // stays put across refreshes; pulled back if the list shrinks
+  const startIdx = custPage * CUST_PAGE_SIZE;
+  const slice = custList.slice(startIdx, startIdx + CUST_PAGE_SIZE);
+
+  let html = '<div class="tableWrap"><table><thead><tr><th>Customer</th><th>Latest Ticket</th><th>Tickets</th><th>Agents Involved</th><th>Total Hours</th><th>Competency / Training Rating</th></tr></thead><tbody>';
+  slice.forEach(([customer, s]) => {
+    const who = s.agents.size ? ` (${esc([...s.agents].join(', '))})` : '';
+    let dateCell = '<td class="ratingNone">—</td>';
+    if (s.last){
+      const since = s.first !== null && new Date(s.first).toDateString() !== new Date(s.last.ms).toDateString()
+        ? `<div class="dateSince">first ${esc(fmtDate(s.first, false))}</div>` : '';
+      dateCell = `<td>${esc(fmtDate(s.last.ms, s.last.hasTime))}${since}</td>`;
+    }
+    html += `<tr><td>${esc(customer)}</td>${dateCell}<td>${s.tickets}</td><td>${s.agents.size}${who}</td><td>${secondsToHours(s.sec)}</td>${ratingCell(s)}</tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  if (pages > 1){
+    const [newer, older] = custHasDates ? ['Newer', 'Older'] : ['Prev', 'Next'];
+    const atStart = custPage === 0, atEnd = custPage === pages - 1;
+    html += `<div class="pager" role="navigation" aria-label="Customer pages">
+      <button data-cust-page="first" ${atStart ? 'disabled' : ''} aria-label="First page">«</button>
+      <button data-cust-page="prev" ${atStart ? 'disabled' : ''}>‹ ${newer}</button>
+      <span class="pagerInfo">Page ${custPage + 1} of ${pages} · customers ${startIdx + 1}–${startIdx + slice.length} of ${custList.length.toLocaleString()}</span>
+      <button data-cust-page="next" ${atEnd ? 'disabled' : ''}>${older} ›</button>
+      <button data-cust-page="last" ${atEnd ? 'disabled' : ''} aria-label="Last page">»</button>
+    </div>`;
+  }
+  box.innerHTML = html;
+}
+
+// the dashboard is redrawn with innerHTML, so pager clicks are handled once, by delegation
+$('output').addEventListener('click', e => {
+  const btn = e.target.closest('[data-cust-page]');
+  if (!btn || btn.disabled) return;
+  const pages = Math.max(1, Math.ceil(custList.length / CUST_PAGE_SIZE));
+  const go = btn.dataset.custPage;
+  custPage = go === 'first' ? 0 : go === 'last' ? pages - 1 : go === 'prev' ? custPage - 1 : custPage + 1;
+  renderCustomerPage();
+  // keep the pager under the cursor instead of jumping when row heights change
+  const pager = $('custTable').querySelector('.pager');
+  if (pager) pager.querySelector(`[data-cust-page="${go}"]:not([disabled])`)?.focus({ preventScroll: true });
+});
+
 function ratingCell(st){
   if (!st.ratings.length) return '<td class="ratingNone">—</td>';
   const avg = st.ratings.reduce((a, b) => a + b, 0) / st.ratings.length;
@@ -982,15 +1071,13 @@ function render(){
   }
 
   if (has.customer){
-    html += '<div class="section"><h2>Per-customer breakdown</h2>';
-    html += '<p class="sub" style="margin-bottom:8px;">Sorted by number of different agents involved, so shared/simultaneous cases surface first.</p>';
-    html += '<div class="tableWrap"><table><thead><tr><th>Customer</th><th>Tickets</th><th>Agents Involved</th><th>Total Hours</th><th>Competency / Training Rating</th></tr></thead><tbody>';
+    // one row per customer; the row list is kept so the pager can redraw just this table
     let badRatings = 0;
     const customerStats = new Map();
     rows.forEach(r => {
       const rc = rowCols(r);
       const c = val(r, rc.customer) || '(blank)';
-      if (!customerStats.has(c)) customerStats.set(c, { tickets:0, agents:new Set(), sec:0, ratings:[] });
+      if (!customerStats.has(c)) customerStats.set(c, { tickets:0, agents:new Set(), sec:0, ratings:[], first:null, last:null });
       const s = customerStats.get(c);
       s.tickets++;
       const a = val(r, rc.agent);
@@ -1001,20 +1088,34 @@ function render(){
         if (n !== null) s.ratings.push(n);
         else if (raw && !/^(n\/?a|none|-+|—)$/i.test(raw)) badRatings++;
       }
+      const d = rc.date ? parseDate(val(r, rc.date)) : null;
+      if (d){
+        if (!s.last || d > s.last.ms) s.last = { ms: d, hasTime: dateHasTime(val(r, rc.date)) };
+        if (!s.first || d < s.first) s.first = d;
+      }
     });
-    [...customerStats]
-      .sort((a,b) => b[1].agents.size - a[1].agents.size || b[1].sec - a[1].sec)
-      .forEach(([customer,s]) => {
-        const who = s.agents.size ? ` (${esc([...s.agents].join(', '))})` : '';
-        html += `<tr><td>${esc(customer)}</td><td>${s.tickets}</td><td>${s.agents.size}${who}</td><td>${secondsToHours(s.sec)}</td>${ratingCell(s)}</tr>`;
-      });
-    html += '</tbody></table></div>';
+    custHasDates = [...customerStats.values()].some(s => s.last);
+    custList = [...customerStats].sort((a,b) =>
+      custHasDates
+        ? ((b[1].last ? b[1].last.ms : -Infinity) - (a[1].last ? a[1].last.ms : -Infinity)) || b[1].tickets - a[1].tickets
+        : b[1].agents.size - a[1].agents.size || b[1].sec - a[1].sec);
+
+    html += '<div class="section"><h2>Per-customer breakdown</h2>';
+    html += `<p class="sub" style="margin-bottom:8px;">${custHasDates
+      ? 'Most recent ticket first, 10 customers per page \u2014 use <strong>Older</strong> to page back to earlier tickets.'
+      : 'Sorted by number of different agents involved, so shared/simultaneous cases surface first. 10 customers per page.'}</p>`;
+    html += '<div id="custTable"></div>';
+    if (!custHasDates){
+      html += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No ticket date column found in the loaded files. Dates are read from a column such as \u201cDate\u201d, \u201cFinished\u201d, \u201cClosed\u201d or \u201cCreated\u201d.</p>';
+    }
     if (!has.rating){
       html += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No rating column found in the loaded files. Ratings are read from a column whose header contains \u201cCompetency\u201d or \u201cTraining\u201d (e.g. \u201cCompetency / Training Rating\u201d), with values 1\u20135.</p>';
     } else if (badRatings){
       html += `<p class="sub warn" style="margin:8px 0 0;font-size:.8rem;">${badRatings.toLocaleString()} rating value(s) weren\u2019t a number from 1 to 5 and were left out of the averages.</p>`;
     }
     html += '</div>';
+  } else {
+    custList = [];
   }
 
   // chart cards sit side by side (two per row on wide screens, stacked on phones)
@@ -1046,6 +1147,7 @@ function render(){
   if (charts.length) html += `<div class="section chartRow">${charts.join('')}</div>`;
 
   $('output').innerHTML = html;
+  renderCustomerPage();
 
   // data preview (in Settings): union of every header across all loaded rows
   const headerSet = new Set();
