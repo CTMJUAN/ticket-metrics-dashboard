@@ -16,6 +16,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 3.1 | Merges ticket-dashboard-3.0 (Claude Code: Title Case labels, summary cards no longer forced to capitals) into 2.22; empty-log message follows the snapshot button's label |
 | 2.22 | All headings, card labels, column headers, chart titles and button labels gathered in one `LABELS` block (search "EDIT LABELS HERE") for easy wording/capitalisation changes |
 | 2.21 | Tickets labelled "test" (customer, complaint, category or agent) left out of all metrics; switch and list in Settings → Data filters |
 | 2.20 | Ratings accept the tracker's 0–5 scale; work logs: finished tickets take their latest rating/customer/complaint/category, tickets deleted after finishing are left out; Category read from work logs when present |

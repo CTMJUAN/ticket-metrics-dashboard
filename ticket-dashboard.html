@@ -173,21 +173,21 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
     <div class="section" style="margin-top:0;">
       <h2 data-label="appearance">Appearance</h2>
       <div class="controls">
-        <button id="themeToggle" class="btnGhost">🌙 Dark mode</button>
+        <button id="themeToggle" class="btnGhost">🌙 Dark Mode</button>
       </div>
     </div>
 
     <div class="section">
-      <h2 data-label="syncedFolder">Synced folder (automatic)</h2>
+      <h2 data-label="syncedFolder">Synced Folder (Automatic)</h2>
       <p class="sub" style="margin-top:-6px;">Point this at your local OneDrive/SharePoint-synced folder once, and it reads every .csv in it (including up to three levels of subfolders, e.g. per-agent folders) directly off disk — no uploading, no network request. Needs Chrome or Edge on desktop.</p>
       <div class="controls">
-        <button id="connectFolderBtn" data-label="connectFolder" class="btnPrimary">Connect synced folder…</button>
-        <button id="reconnectFolderBtn" data-label="reconnectFolder" class="btnPrimary" style="display:none;">Reconnect folder…</button>
-        <button id="refreshFolderBtn" data-label="refreshNow" class="btnGhost" style="display:none;">Refresh now</button>
+        <button id="connectFolderBtn" data-label="connectFolder" class="btnPrimary">Connect Synced Folder…</button>
+        <button id="reconnectFolderBtn" data-label="reconnectFolder" class="btnPrimary" style="display:none;">Reconnect Folder…</button>
+        <button id="refreshFolderBtn" data-label="refreshNow" class="btnGhost" style="display:none;">Refresh Now</button>
         <button id="disconnectFolderBtn" data-label="disconnect" class="btnGhost" style="display:none;">Disconnect</button>
       </div>
       <div class="controls">
-        <label for="refreshRate" class="sub" style="font-size:.85rem;" data-label="checkForChanges">Check for changes</label>
+        <label for="refreshRate" class="sub" style="font-size:.85rem;" data-label="checkForChanges">Check for Changes</label>
         <select id="refreshRate" style="font-size:.85rem;border-radius:8px;padding:6px 10px;border:1px solid var(--border);background:var(--card);color:var(--text);">
           <option value="30000">every 30 seconds</option>
           <option value="60000">every minute</option>
@@ -204,14 +204,14 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
     </div>
 
     <div class="section">
-      <h2 data-label="uploadManually">Or upload manually</h2>
+      <h2 data-label="uploadManually">Or Upload Manually</h2>
       <p class="sub" style="margin-top:-6px;">Add one or more ticket export CSVs by hand; they're combined with each other and with any synced-folder data into one view. Re-adding a file with the same name replaces the earlier copy.</p>
       <label class="dropzone" id="dropzone">
         <div>Click to add CSV file(s), or drag &amp; drop here — you can add more anytime</div>
         <input type="file" id="fileInput" accept=".csv,text/csv" multiple>
       </label>
       <div class="controls" style="margin-top:10px;">
-        <button id="clearManualBtn" data-label="removeUploads" class="btnGhost" disabled>Remove uploaded files</button>
+        <button id="clearManualBtn" data-label="removeUploads" class="btnGhost" disabled>Remove Uploaded Files</button>
       </div>
       <div id="fileList"></div>
     </div>
@@ -230,18 +230,18 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
     </div>
 
     <div class="section">
-      <h2 data-label="dataPreview">Data preview (first 50 rows)</h2>
+      <h2 data-label="dataPreview">Data Preview (First 50 Rows)</h2>
       <p class="sub" style="margin-top:-6px;">The raw rows behind the dashboard, after non-Finished and duplicate rows are removed.</p>
       <div id="previewWrap"><p class="empty">No data loaded yet.</p></div>
     </div>
 
     <div class="section" id="snapshotSection">
-      <h2 data-label="metricsLog">Metrics log over time</h2>
+      <h2 data-label="metricsLog">Metrics Log Over Time</h2>
       <p class="sub" style="margin-top:-6px;">Saves a timestamped snapshot of the current totals in this browser, so you can track trends across uploads (e.g. daily exports). The graph of your snapshots is on the main page.</p>
       <div class="controls">
-        <button id="logBtn" data-label="logSnapshot" class="btnPrimary" disabled>Log this snapshot</button>
-        <button id="downloadLogBtn" data-label="downloadLog" class="btnGhost">Download log as CSV</button>
-        <button id="clearLogBtn" data-label="clearLog" class="btnGhost">Clear log</button>
+        <button id="logBtn" data-label="logSnapshot" class="btnPrimary" disabled>Log This Snapshot</button>
+        <button id="downloadLogBtn" data-label="downloadLog" class="btnGhost">Download Log as CSV</button>
+        <button id="clearLogBtn" data-label="clearLog" class="btnGhost">Clear Log</button>
         <label class="btnGhost" style="font-size:.85rem;border-radius:8px;padding:7px 14px;cursor:pointer;border:1px solid var(--border);">
           <span data-label="importLog">Import log CSV…</span><input type="file" id="importLogInput" accept=".csv,text/csv" multiple style="display:none;">
         </label>
@@ -249,7 +249,7 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
       <div id="importMsg" class="importMsg sub" role="status"></div>
       <div class="autoBox">
         <div class="controls" style="margin-bottom:6px;">
-          <label class="autoLabel"><input type="checkbox" id="autoEnabled"> <span data-label="autoSnapshot">Log a snapshot automatically at</span></label>
+          <label class="autoLabel"><input type="checkbox" id="autoEnabled"> <span data-label="autoSnapshot">Log a Snapshot Automatically At</span></label>
           <input type="time" id="autoTime" value="17:00" class="autoInput" aria-label="Automatic snapshot time">
         </div>
         <div class="controls" id="autoDays" role="group" aria-label="Days to take automatic snapshots" style="margin-bottom:6px;"></div>
@@ -281,27 +281,27 @@ const LABELS = {
   pageIcon:             '🎫',                            // shown before the page heading ('' for none)
   settingsButton:       '⚙ Settings',
 
-  // ── Summary cards (top of page) — shown exactly as typed, so ALL CAPS here = all caps on screen ──
+  // ── Summary cards (top of page) — shown exactly as typed ──
   daily:                'Daily',
   cumulative:           'Cumulative',
   today:                'Today',
   latest:               'Latest',
-  totalTickets:         'TOTAL TICKETS',                 // Cumulative view
-  totalCustomers:       'TOTAL CUSTOMERS HELPED',        // Cumulative view
-  totalHours:           'TOTAL HOURS',                   // Cumulative view
-  dayTickets:           'TICKETS',                       // Daily view
-  dayCustomers:         'CUSTOMERS HELPED',              // Daily view
-  dayHours:             'HOURS',                         // Daily view
-  uniqueAgents:         'UNIQUE AGENTS',
-  avgTime:              'AVG TIME / TICKET',
+  totalTickets:         'Total Tickets',                 // Cumulative view
+  totalCustomers:       'Total Customers Helped',        // Cumulative view
+  totalHours:           'Total Hours',                   // Cumulative view
+  dayTickets:           'Tickets',                       // Daily view
+  dayCustomers:         'Customers Helped',              // Daily view
+  dayHours:             'Hours',                         // Daily view
+  uniqueAgents:         'Unique Agents',
+  avgTime:              'Avg Time / Ticket',
 
   // ── Charts ─────────────────────────────────────────────────────────────────
-  statusChart:          'Status breakdown',
-  complaintsChart:      'Top complaints',
+  statusChart:          'Status Breakdown',
+  complaintsChart:      'Top Complaints',
   category:             'Category',                      // switch on the Top complaints chart
   type:                 'Type',                          // switch on the Top complaints chart
-  topCustomersChart:    'Top 5 customers by ticket count',
-  otherCustomers:       'All other customers',           // grey slice of the pie
+  topCustomersChart:    'Top 5 Customers by Ticket Count',
+  otherCustomers:       'All Other Customers',           // grey slice of the pie
 
   // ── Metrics over time (snapshot graph) ─────────────────────────────────────
   trendTitle:           'Metrics over time',
@@ -314,7 +314,7 @@ const LABELS = {
   countAxis:            'Count',                         // left scale title when several count lines are shown
 
   // ── Per-agent breakdown table ──────────────────────────────────────────────
-  agentsTitle:          'Per-agent breakdown',
+  agentsTitle:          'Per-Agent Breakdown',
   colAgent:             'Agent',
   colTickets:           'Tickets',                       // also used in the per-customer table
   colUniqueCustomers:   'Unique Customers',
@@ -322,7 +322,7 @@ const LABELS = {
   colAvgTime:           'Avg Time / Ticket',
 
   // ── Per-customer breakdown table ───────────────────────────────────────────
-  customersTitle:       'Per-customer breakdown',
+  customersTitle:       'Per-Customer Breakdown',
   colCustomer:          'Customer',
   colLatestTicket:      'Latest Ticket',
   colAgentsInvolved:    'Agents Involved',
@@ -335,16 +335,16 @@ const LABELS = {
   // ── Settings panel ─────────────────────────────────────────────────────────
   settingsTitle:        'Settings',
   appearance:           'Appearance',
-  darkMode:             '🌙 Dark mode',
-  lightMode:            '☀️ Light mode',
-  syncedFolder:         'Synced folder (automatic)',
-  connectFolder:        'Connect synced folder…',
-  reconnectFolder:      'Reconnect folder…',
-  refreshNow:           'Refresh now',
+  darkMode:             '🌙 Dark Mode',
+  lightMode:            '☀️ Light Mode',
+  syncedFolder:         'Synced Folder (Automatic)',
+  connectFolder:        'Connect Synced Folder…',
+  reconnectFolder:      'Reconnect Folder…',
+  refreshNow:           'Refresh Now',
   disconnect:           'Disconnect',
-  checkForChanges:      'Check for changes',
-  uploadManually:       'Or upload manually',
-  removeUploads:        'Remove uploaded files',
+  checkForChanges:      'Check for Changes',
+  uploadManually:       'Or Upload Manually',
+  removeUploads:        'Remove Uploaded Files',
   complaintTypes:       'Complaint types',
   suggestedCombos:      'Suggested combinations',
   combinedTypes:        'Combined types',
@@ -353,13 +353,13 @@ const LABELS = {
   ungroup:              'Ungroup',
   dataFilters:          'Data filters',
   excludeTest:          'Leave out tickets labelled “test”',
-  dataPreview:          'Data preview (first 50 rows)',
-  metricsLog:           'Metrics log over time',
-  logSnapshot:          'Log this snapshot',
-  downloadLog:          'Download log as CSV',
-  clearLog:             'Clear log',
+  dataPreview:          'Data Preview (First 50 Rows)',
+  metricsLog:           'Metrics Log Over Time',
+  logSnapshot:          'Log This Snapshot',
+  downloadLog:          'Download Log as CSV',
+  clearLog:             'Clear Log',
   importLog:            'Import log CSV…',
-  autoSnapshot:         'Log a snapshot automatically at',
+  autoSnapshot:         'Log a Snapshot Automatically At',
   colLoggedAt:          'Logged At',                     // snapshot log table
   colType:              'Type',
   colCustomers:         'Customers',
@@ -2136,7 +2136,7 @@ function renderLog(){
   const wrap = $('logWrap');
   $('downloadLogBtn').disabled = $('clearLogBtn').disabled = !log.length;
   if (!log.length){
-    wrap.innerHTML = '<p class="empty">No snapshots logged yet. Load data, then click \"Log this snapshot\" or turn on automatic snapshots below.</p>';
+    wrap.innerHTML = `<p class="empty">No snapshots logged yet. Load data, then click \u201c${esc(L.logSnapshot)}\u201d or turn on automatic snapshots below.</p>`;
     renderTrend(log);
     return;
   }
