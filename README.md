@@ -13,6 +13,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.12 | Status breakdown treats "Ticket_finished" (and other underscore/hyphen/"Ticket" variants) as "Finished"; "Ticket_unfinished" now correctly excluded |
 | 2.11 | Combine complaint types: automatic merging of spelling variants, suggested and manual combinations in Settings, blank complaints ignored |
 | 2.10 | Per-customer breakdown shows each customer's latest ticket date, sorted newest first, 10 per page with Newer/Older paging |
 | 2.9 | Competency / Training Rating column in the per-customer breakdown |

@@ -822,8 +822,15 @@ function anyColsPresent(list){
 }
 
 /* ---------- value helpers ---------- */
+// "Ticket_finished", "ticket-finished", "TICKET  FINISHED" → "Finished"
+function statusLabel(v){
+  let s = String(v ?? '').trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  s = s.replace(/^ticket\s+/, '').trim();
+  if (!s) return '(blank)';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 function isFinished(v){
-  const s = String(v ?? '').toLowerCase();
+  const s = statusLabel(v).toLowerCase(); // underscores → spaces, so "Ticket_unfinished" is still caught as unfinished
   if (/\b(un|not\s*|non-?\s*)finish/.test(s)) return false; // "Unfinished", "Not Finished"
   return /finish/.test(s);
 }
@@ -1343,8 +1350,7 @@ function render(){
     if (a) agents.add(a);
     if (cu) customers.add(cu);
     if (rc.status){
-      const raw = val(r, rc.status) || '(blank)';
-      const s = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase(); // "finished" and "Finished" are one status
+      const s = statusLabel(val(r, rc.status)); // "Finished", "finished" and "Ticket_finished" are one status
       statuses[s] = (statuses[s]||0)+1;
     }
     totalSec += dur(r);
