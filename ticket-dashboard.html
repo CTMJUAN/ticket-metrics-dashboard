@@ -40,6 +40,17 @@ p.sub{margin:0 0 20px;}
 .section{margin:28px 0;}
 .section h2{font-size:1rem;margin:0 0 10px;color:var(--text);}
 .chartRow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:stretch;}
+@media (min-width:900px){ .chartRow.ip2{grid-template-columns:minmax(210px,.6fr) 1fr;} .chartRow.ip3{grid-template-columns:minmax(210px,.6fr) 1fr 1fr;} }
+.ipWrap{justify-content:flex-start !important;}
+.ipBig{font-size:2.6rem;font-weight:700;line-height:1;margin-top:4px;}
+.ipSub{color:var(--sub);font-size:.82rem;margin:6px 0 10px;}
+.ipList{list-style:none;margin:0;padding:0;border-top:1px solid var(--border);}
+.ipList li{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);}
+.ipList li:last-child{border-bottom:none;}
+.ipDot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px;background:#34d399;}
+.ipDot.paused{background:#f59e0b;}
+.ipTitle{font-size:.82rem;overflow-wrap:anywhere;}
+.ipMeta{font-size:.72rem;color:var(--sub);}
 .chartCard{display:flex;flex-direction:column;min-width:0;}
 .chartCard h2{font-size:1rem;margin:0 0 10px;}
 .chartCard .chartWrap{flex:1;display:flex;flex-direction:column;justify-content:center;}
@@ -368,6 +379,13 @@ const LABELS = {
   tagAuto:              'Auto',
   tagManual:            'Manual',
   tagImported:          'Imported',
+
+  // ── In Progress counter (next to Top Complaints) ───────────────────────────
+  inProgress:           'In Progress',
+  ipRunning:            'running',
+  ipPaused:             'paused',
+  ipNotStarted:         'not started',
+  ipNone:               'Nothing in progress right now.',
 };
 /* ═════════════════════════════ end of editable labels ═════════════════════════ */
 const L = LABELS;
@@ -1055,6 +1073,7 @@ function detectColsFromHeaders(headers){
     date:      pick(headers, ['finished','finishedat','finisheddate','finishtime','finishedtime','closed','closedat','closeddate','resolvedat','resolveddate','completedat','completeddate','enddate','endtime','date','ticketdate','eventdate','datetime','createdat','createddate','created','opened','openeddate','started','startedat','startdate','starttime','timestamp'],
                     /date|finish|closed|resolved|completed|created|opened|start|timestamp/i, /duration|elapsed|spent|handle|status|state/i),
     // per-customer 0–5 rating; deliberately NOT a bare "Rating" match, so a CSAT/satisfaction column isn't picked up by mistake
+    started:   pick(headers, ['startedat','started','starttime','startdate','createdat','created','openedat','opened'], /start|creat|open/i, /duration|elapsed|status|state/i),
     rating:    pick(headers, ['competencytrainingrating','competencyrating','trainingrating','competencytraining','competency','training','traininglevel','competencylevel','proficiency'],
                     /competen|training|proficien|skill.?level/i)
   };
@@ -1587,6 +1606,7 @@ function rebuild(){
   const raw = [];
   for (const r of sources.folder.rows) raw.push(r);
   for (const r of sources.manual.rows) raw.push(r);
+  inProgress = collectInProgress(raw);
 
   // Work logs (Event column: ticket_started, ticket_finished, ticket_edited, competency_rated, …)
   // record a ticket's *current* customer, complaint, category and rating on every row. A rating or
@@ -1680,11 +1700,107 @@ function rebuild(){
   }
   if (!rows.length){
     setPreview('');
-    output.innerHTML = '<p class="empty">No tickets with a "Finished" status were found in the loaded file(s).</p>';
+    // nothing finished yet (e.g. first thing in the morning) — still show what's in progress
+    output.innerHTML = '<p class="empty">No tickets with a "Finished" status were found in the loaded file(s).</p>'
+      + (inProgress && inProgress.known ? `<div class="section chartRow" style="max-width:360px;">${ipCardHTML()}</div>` : '');
     return;
   }
   render();
 }
+
+/* ---------- In Progress: tickets that are running or paused right now ----------
+   From exports: the Status column (Running / Paused / Not started / Finished).
+   From work logs: each ticket's latest status event (started/resumed → running,
+   paused → paused, finished/deleted → done). Finished anywhere wins, because
+   finishing is final; test tickets are left out like everywhere else. */
+let inProgress = null;
+const EXPORT_STATE = memo(v => {
+  const s = statusLabel(v).toLowerCase();
+  if (isFinished(v)) return 'finished';
+  if (/^(running|in progress|active|open|started|working)$/.test(s)) return 'running';
+  if (/^(paused|on hold|hold|waiting)$/.test(s)) return 'paused';
+  if (/^(not started|new|queued|pending)$/.test(s)) return 'notstarted';
+  if (/delet|cancel/.test(s)) return 'deleted';
+  return null;
+});
+const EVENT_STATE = { ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_finished: 'finished', ticket_deleted: 'deleted' };
+function collectInProgress(raw){
+  const t = new Map(); // agent||id → ticket
+  let known = false;   // any status information at all?
+  raw.forEach((r, order) => {
+    const rc = rowCols(r);
+    if (!rc.status || !rc.ticketId) return;
+    const id = String(r[rc.ticketId] ?? '').trim();
+    if (!id) return;
+    const agent = rc.agent ? String(r[rc.agent] ?? '').trim() : '';
+    const key = agent + '||' + id;
+    const v = String(r[rc.status] ?? '').trim();
+    let e = t.get(key);
+    if (!e){ e = { key, id, agent, state: null, stateMs: -Infinity, stateOrder: -1, finished: false, deleted: false, startMs: null, row: r, rowMs: -Infinity, fromLog: false }; t.set(key, e); }
+    const ms = rc.date ? parseDate(val(r, rc.date)) : null;
+    if (isLogEvent(v)){
+      known = true;
+      const st = EVENT_STATE[v.toLowerCase()];
+      if (st === 'finished') e.finished = true;
+      if (st === 'deleted') e.deleted = true;
+      if (st === 'running' && /started/i.test(v) && ms !== null && (e.startMs === null || ms < e.startMs)) e.startMs = ms;
+      const when = ms ?? -Infinity;
+      if (st && (!e.fromLog || when > e.stateMs || (when === e.stateMs && order > e.stateOrder))){ e.state = st; e.stateMs = when; e.stateOrder = order; e.fromLog = true; }
+      if (when >= e.rowMs){ e.row = r; e.rowMs = when; } // latest labels (customer, complaint)
+    } else {
+      const st = EXPORT_STATE(v);
+      if (st) known = true;
+      if (st === 'finished') e.finished = true;
+      if (st === 'deleted') e.deleted = true;
+      if (st && !e.fromLog){ e.state = st; e.row = r; }
+      const sm = rc.started ? parseDate(val(r, rc.started)) : null;
+      if (sm !== null && (e.startMs === null || sm < e.startMs)) e.startMs = sm;
+    }
+  });
+  const list = [], notStarted = [];
+  for (const e of t.values()){
+    if (e.finished || e.deleted) continue;
+    if (excludeTestOn() && testLabelOf(e.row)) continue;
+    const rc = rowCols(e.row);
+    const item = { ...e, customer: val(e.row, rc.customer), complaint: val(e.row, rc.complaint) };
+    if (e.state === 'running' || e.state === 'paused') list.push(item);
+    else if (e.state === 'notstarted') notStarted.push(item);
+  }
+  // longest-open first; tickets with no start time go last
+  list.sort((a, b) => (a.startMs ?? Infinity) - (b.startMs ?? Infinity));
+  return { known, list, notStarted, running: list.filter(x => x.state === 'running').length, paused: list.filter(x => x.state === 'paused').length };
+}
+function ago(ms){
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${m % 60}m ago`;
+  return `${Math.floor(h / 24)} days ago`;
+}
+function ipCardHTML(){
+  const ip = inProgress;
+  const n = ip.list.length;
+  const split = [];
+  if (ip.running) split.push(`${ip.running.toLocaleString()} ${esc(L.ipRunning)}`);
+  if (ip.paused) split.push(`${ip.paused.toLocaleString()} ${esc(L.ipPaused)}`);
+  if (ip.notStarted.length) split.push(`+ ${ip.notStarted.length.toLocaleString()} ${esc(L.ipNotStarted)}`);
+  let body = `<div class="ipBig">${n.toLocaleString()}</div><div class="ipSub">${split.join(' \u00b7 ') || esc(L.ipNone)}</div>`;
+  if (n){
+    body += '<ul class="ipList">' + ip.list.slice(0, 5).map(x => {
+      const title = [x.customer, x.complaint].filter(Boolean).join(' \u2014 ') || `Ticket #${x.id}`;
+      const meta = [x.agent, x.startMs !== null ? `started ${ago(x.startMs)}` : ''].filter(Boolean).join(' \u00b7 ');
+      return `<li><span class="ipDot ${x.state}" title="${x.state === 'paused' ? esc(L.ipPaused) : esc(L.ipRunning)}"></span><div><div class="ipTitle">${esc(title)}</div><div class="ipMeta">${esc(meta)}</div></div></li>`;
+    }).join('') + '</ul>';
+    if (n > 5) body += `<div class="chartNote">+${(n - 5).toLocaleString()} more</div>`;
+  }
+  return `<div class="chartCard" id="ipCard"><h2>${esc(L.inProgress)}</h2><div class="chartWrap ipWrap">${body}</div></div>`;
+}
+// keep the "started … ago" times fresh without a full redraw
+setInterval(() => {
+  const card = $('ipCard');
+  if (card && inProgress && inProgress.known) card.outerHTML = ipCardHTML();
+}, 60000);
 
 function renderFileList(){
   const files = sources.folder.files.concat(sources.manual.files);
@@ -1994,7 +2110,14 @@ function render(){
     if (otherCount) slices.push({ label: `${L.otherCustomers} (${sorted.length - 5})`, value: otherCount, other: true });
     charts.push(chartCard(L.topCustomersChart, pieChartHTML(slices)));
   }
-  if (charts.length) html += `<div class="section chartRow">${charts.join('')}</div>`;
+  // In Progress sits immediately left of Top Complaints
+  if (inProgress && inProgress.known){
+    const ci = charts.findIndex(c => c.includes('id="complaintCard"'));
+    charts.splice(ci >= 0 ? ci : 0, 0, ipCardHTML());
+  }
+  // a narrower first column for the counter when it shares the row with one or two charts
+  const ipCls = inProgress && inProgress.known && (charts.length === 2 || charts.length === 3) ? ` ip${charts.length}` : '';
+  if (charts.length) html += `<div class="section chartRow${ipCls}">${charts.join('')}</div>`;
 
   $('output').innerHTML = html;
   renderKpis();

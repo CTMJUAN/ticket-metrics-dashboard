@@ -16,6 +16,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 3.2 | In Progress counter next to Top Complaints: running + paused tickets from exports and work logs, longest-open first |
 | 3.1 | Merges ticket-dashboard-3.0 (Claude Code: Title Case labels, summary cards no longer forced to capitals) into 2.22; empty-log message follows the snapshot button's label |
 | 2.22 | All headings, card labels, column headers, chart titles and button labels gathered in one `LABELS` block (search "EDIT LABELS HERE") for easy wording/capitalisation changes |
 | 2.21 | Tickets labelled "test" (customer, complaint, category or agent) left out of all metrics; switch and list in Settings → Data filters |
