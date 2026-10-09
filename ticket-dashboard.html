@@ -209,6 +209,7 @@ svg .line-hours{stroke:#34d399;fill:none;stroke-width:2;}
         <div class="controls" id="autoDays" role="group" aria-label="Days to take automatic snapshots" style="margin-bottom:6px;"></div>
         <div id="autoStatus" class="sub" style="font-size:.82rem;"></div>
       </div>
+      <div id="logWarn" class="warn" style="font-size:.82rem;margin-bottom:8px;" role="alert"></div>
       <div id="logWrap"></div>
     </div>
   </div>
@@ -236,6 +237,22 @@ function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* ---------- reading files: pick the right text encoding ----------
+   Excel's plain "CSV (Comma delimited)" on Windows saves in Windows-1252, not
+   UTF-8; "Unicode Text" saves UTF-16. Decoding everything as UTF-8 turns
+   "Société" into "Soci�t�". Returns null for files that aren't text at all. */
+async function readFileText(file){
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) return new TextDecoder('utf-16le').decode(buf.subarray(2));
+  if (buf.length >= 2 && buf[0] === 0xFE && buf[1] === 0xFF) return new TextDecoder('utf-16be').decode(buf.subarray(2));
+  // binary check: text files essentially never contain control bytes other than tab / newline / carriage return
+  const probe = buf.subarray(0, 65536);
+  let ctrl = 0; for (let i = 0; i < probe.length; i++){ const b = probe[i]; if (b < 32 && b !== 9 && b !== 10 && b !== 13 && b !== 12) ctrl++; }
+  if (ctrl > probe.length * 0.005) return null;
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { return new TextDecoder('windows-1252').decode(buf); }
+}
+
 /* ---------- CSV parsing (no external library) ---------- */
 function detectDelimiter(text){
   // look at the header line only, ignoring anything inside quotes
@@ -253,12 +270,9 @@ function detectDelimiter(text){
   return best;
 }
 
-function parseCSV(text){
-  text = String(text).replace(/^﻿/, '');          // Excel's UTF-8 byte-order mark
-  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const delim = detectDelimiter(text);
+function splitCSV(text, delim, literalQuotes){
   const table = [];
-  let row = [], field = '', inQuotes = false;
+  let row = [], field = '', inQuotes = false, openedAt = -1, atFieldStart = true;
   for (let i = 0; i < text.length; i++){
     const c = text[i];
     if (inQuotes){
@@ -266,26 +280,59 @@ function parseCSV(text){
         if (text[i+1] === '"'){ field += '"'; i++; }
         else inQuotes = false;
       } else field += c;
-    } else {
-      if (c === '"') inQuotes = true;
-      else if (c === delim){ row.push(field); field = ''; }
-      else if (c === '\n'){ row.push(field); table.push(row); row = []; field = ''; }
-      else field += c;
-    }
+    } else if (c === '"' && atFieldStart && !literalQuotes.has(i)){
+      inQuotes = true; openedAt = i; atFieldStart = false;
+    } else if (c === delim){ row.push(field); field = ''; atFieldStart = true; }
+    else if (c === '\n'){ row.push(field); table.push(row); row = []; field = ''; atFieldStart = true; }
+    else { field += c; atFieldStart = false; }
   }
+  if (inQuotes) return { unterminatedAt: openedAt };
   if (field.length || row.length){ row.push(field); table.push(row); }
+  return { table };
+}
+
+function parseCSV(text){
+  text = String(text).replace(/^﻿/, '');          // UTF-8 byte-order mark
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Excel sometimes writes "sep=;" as the first line to name the delimiter
+  let delim = null;
+  const sepLine = text.match(/^"?sep=(.)"?\n/i);
+  if (sepLine){ delim = sepLine[1]; text = text.slice(sepLine[0].length); }
+  if (!delim){
+    // judge the delimiter from the first line that has at least two of , ; or tab (title lines above the header don't)
+    const lines = text.split('\n', 16);
+    const headerLine = lines.find(l => (l.match(/[,;\t]/g) || []).length >= 2) || lines[0] || '';
+    delim = detectDelimiter(headerLine);
+  }
+
+  // a quote that never closes would swallow the rest of the file — treat it as an ordinary character instead
+  const literal = new Set();
+  let res;
+  for (let tries = 0; tries < 50; tries++){
+    res = splitCSV(text, delim, literal);
+    if (!res.unterminatedAt && res.unterminatedAt !== 0) break;
+    literal.add(res.unterminatedAt);
+  }
+  const table = res.table || [];
   if (!table.length) return [];
+
+  // skip title lines above the real header ("Ticket Export Report", "Generated …", blank lines)
+  const nonEmpty = r => r.filter(v => String(v).trim() !== '').length;
+  // only single-cell lines are skipped, so a real header is never mistaken for a title
+  let headerIdx = 0;
+  while (headerIdx < Math.min(table.length - 1, 15) && nonEmpty(table[headerIdx]) <= 1) headerIdx++;
+  if (nonEmpty(table[headerIdx]) <= 1) headerIdx = 0; // no multi-column line near the top: keep the old behaviour
 
   // clean headers: trim, name blanks, make duplicates unique so no column is silently overwritten
   const seen = {};
-  const headers = table[0].map((h, i) => {
+  const headers = table[headerIdx].map((h, i) => {
     let name = String(h).trim() || `Column ${i + 1}`;
     if (seen[name]){ seen[name]++; name = `${name} (${seen[name]})`; } else seen[name] = 1;
     return name;
   });
 
   const out = [];
-  for (let r = 1; r < table.length; r++){
+  for (let r = headerIdx + 1; r < table.length; r++){
     const cells = table[r];
     if (cells.every(v => String(v).trim() === '')) continue; // blank / ",,,," lines
     const obj = {};
@@ -592,8 +639,9 @@ async function doScan(){
     const newRows = [], newFiles = [];
     for (const { path, file } of opened){
       let text;
-      try { text = await file.text(); }
+      try { text = await readFileText(file); }
       catch (e) { diag.unreadableFiles.push(`${path} (${e.message})`); continue; }
+      if (text === null){ diag.unreadableFiles.push(`${path} (not a text file)`); continue; }
       const parsed = parseCSV(text);
       for (const r of parsed) newRows.push(r); // a loop, not push(...parsed): spreading 100k+ rows overflows the stack
       newFiles.push({ name: path, count: parsed.length, source: 'folder' });
@@ -742,10 +790,15 @@ async function handleFiles(fileList){
   if (!all.length) return;
   const files = all.filter(f => /\.csv\s*$/i.test(f.name) || f.type === 'text/csv');
   manualNotes = all.filter(f => !files.includes(f)).map(f => `${f.name} skipped (not a .csv)`);
+  if (files.length){
+    $('dataSourceSummary').textContent = `Reading ${files.length} file(s)…`;
+    await new Promise(r => setTimeout(r, 30)); // let the message paint before the heavy parsing starts
+  }
   for (const f of files){
     let text;
-    try { text = await f.text(); }
+    try { text = await readFileText(f); }
     catch (e) { manualNotes.push(`${f.name} couldn't be read (${e.message})`); continue; }
+    if (text === null){ manualNotes.push(`${f.name} skipped (not a text CSV file)`); continue; }
     const parsed = parseCSV(text);
     // re-adding a file with the same name replaces it instead of double-counting its rows
     const prevIdx = sources.manual.files.findIndex(x => x.name === f.name);
@@ -800,42 +853,61 @@ function detectColsFromHeaders(headers){
                     /competen|training|proficien|skill.?level/i)
   };
 }
+// Detected columns are cached per header set, and each row remembers its header set,
+// so the many passes over 100k+ rows don't re-list every row's keys each time.
 const colsCache = new Map();
+const rowColsMemo = new WeakMap();
 function rowCols(row){
+  let c = rowColsMemo.get(row);
+  if (c) return c;
   const headers = Object.keys(row);
   const sig = headers.join('\u0001');
-  let c = colsCache.get(sig);
-  if (!c){ c = detectColsFromHeaders(headers); colsCache.set(sig, c); }
+  c = colsCache.get(sig);
+  if (!c){ c = detectColsFromHeaders(headers); c.headers = headers; colsCache.set(sig, c); }
+  rowColsMemo.set(row, c);
   return c;
 }
 function anyColsPresent(list){
   const out = { ticketId:false, agent:false, customer:false, complaint:false, status:false, duration:false, rating:false, date:false };
-  const seenSigs = new Set();
-  list.forEach(r => {
-    const sig = Object.keys(r).join('\u0001');
-    if (seenSigs.has(sig)) return;
-    seenSigs.add(sig);
+  const seen = new Set();
+  for (const r of list){
     const rc = rowCols(r);
+    if (seen.has(rc)) continue;
+    seen.add(rc);
     Object.keys(out).forEach(k => { if (rc[k]) out[k] = true; });
-  });
+  }
   return out;
 }
 
 /* ---------- value helpers ---------- */
+// Status, duration, date and complaint cells repeat a lot across big exports, so each
+// distinct value is converted once and remembered (bounded so memory can't grow without limit).
+function memo(fn){
+  const cache = new Map();
+  return (v, extra) => {
+    const k = extra === undefined ? v : extra + '\u0001' + v;
+    let r = cache.get(k);
+    if (r === undefined && !cache.has(k)){
+      if (cache.size > 200000) cache.clear();
+      r = fn(v, extra); cache.set(k, r);
+    }
+    return r;
+  };
+}
 // "Ticket_finished", "ticket-finished", "TICKET  FINISHED" → "Finished"
-function statusLabel(v){
+const statusLabel = memo(function statusLabel(v){
   let s = String(v ?? '').trim().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').toLowerCase();
   s = s.replace(/^ticket\s+/, '').trim();
   if (!s) return '(blank)';
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-function isFinished(v){
+});
+const isFinished = memo(function isFinished(v){
   const s = statusLabel(v).toLowerCase(); // underscores → spaces, so "Ticket_unfinished" is still caught as unfinished
   if (/\b(un|not\s*|non-?\s*)finish/.test(s)) return false; // "Unfinished", "Not Finished"
   return /finish/.test(s);
-}
+});
 
-function parseTimeToSeconds(v, unit){
+const parseTimeToSeconds = memo(function parseTimeToSeconds(v, unit){
   if (v === undefined || v === null) return 0;
   const s = String(v).trim().replace(/,/g, '');
   if (s === '') return 0;
@@ -853,14 +925,14 @@ function parseTimeToSeconds(v, unit){
     return _;
   });
   return matched ? total : 0;
-}
+});
 function secondsToHms(total){
   if (!isFinite(total)) total = 0;
   total = Math.round(total);
   const h = Math.floor(total/3600), m = Math.floor((total%3600)/60), s = total%60;
   return (h>0?h+'h ':'') + (m>0||h>0?m+'m ':'') + s+'s';
 }
-function secondsToHours(total){ return (total/3600).toFixed(1) + ' hrs'; }
+function secondsToHours(total){ return (total/3600).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' hrs'; }
 const dur = r => durSec.get(r) || 0;
 // a cell's value with stray spaces removed, so "Ann" and "Ann " count as the same agent
 const val = (r, col) => col ? String(r[col] ?? '').trim() : '';
@@ -887,15 +959,17 @@ function singular(w){
   return w;
 }
 function complaintWords(raw){
-  return String(raw).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).map(singular);
+  // accents folded (Réclamation = Reclamation), letters/digits of any script kept (請求, Ошибка)
+  return String(raw).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean).map(singular);
 }
 // null = blank
-function complaintKey(raw){
+const complaintKey = memo(function complaintKey(raw){
   const s = String(raw ?? '').trim();
   if (BLANK_COMPLAINT.test(s)) return null;
   const k = complaintWords(s).join('');
   return k || null;
-}
+});
 function complaintCore(raw){
   const words = complaintWords(raw);
   const core = words.filter(w => !FILLER.has(w)).join('');
@@ -1089,7 +1163,15 @@ function renderComplaintPanel(ix){
     </div>
     <p class="sub" style="margin:6px 0 0;font-size:.75rem;">Tick two or more, then Combine. The name defaults to the largest one ticked.</p></div>`;
 
+  // a background refresh can redraw this panel while someone is typing a group name — put them back where they were
+  const act = document.activeElement;
+  const keep = act && box.contains(act) && act.tagName === 'INPUT' && act.type === 'text'
+    ? { sel: act.id ? '#' + act.id : `[data-cg-rename="${act.dataset.cgRename}"]`, value: act.value, pos: act.selectionStart } : null;
   box.innerHTML = html;
+  if (keep){
+    const el = box.querySelector(keep.sel);
+    if (el){ el.value = keep.value; el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (e) {} }
+  }
 }
 
 function complaintsChanged(){
@@ -1154,6 +1236,7 @@ $('output').addEventListener('click', e => {
 
 /* ---------- ticket dates ---------- */
 // "2026-10-08", "2026-10-08 14:05", "10/8/2026", "10/8/26 2:05 PM", ISO with timezone…  → ms, or null
+// not memoised: nearly every ticket has its own timestamp, so a cache would only churn
 function parseDate(v){
   const s = String(v ?? '').trim();
   if (!s) return null;
@@ -1166,8 +1249,20 @@ function parseDate(v){
     if (h !== undefined && m[7]){ const pm = /^p/i.test(m[7]); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
     return mkLocal(y, +m[1], +m[2], h, m[5], m[6]); // US month/day/year
   }
-  const t = Date.parse(s); // anything else the browser understands (e.g. ISO with Z / offset)
-  return isNaN(t) ? null : t;
+  // Excel date serial numbers (days since 1899-12-30), e.g. 45938 = 2025-10-08
+  m = s.match(/^(\d{5})(?:\.(\d+))?$/);
+  if (m){
+    const serial = parseFloat(s);
+    if (serial < 25569 || serial > 73051) return null; // outside 1970–2100: not a date
+    const d = new Date(1899, 11, 30 + Math.floor(serial));
+    d.setTime(d.getTime() + Math.round((serial % 1) * 86400000));
+    return d.getTime();
+  }
+  if (/^\d+$/.test(s)) return null; // other bare numbers aren't dates
+  const t = Date.parse(s); // anything else the browser understands (e.g. ISO with Z / offset, "08-Oct-2026")
+  if (isNaN(t)) return null;
+  const y = new Date(t).getFullYear();
+  return y >= 1970 && y <= 2100 ? t : null;
 }
 function mkLocal(y, mo, d, h, mi, se){
   if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
@@ -1236,7 +1331,8 @@ $('output').addEventListener('click', e => {
 function ratingCell(st){
   if (!st.ratings.length) return '<td class="ratingNone">—</td>';
   const avg = st.ratings.reduce((a, b) => a + b, 0) / st.ratings.length;
-  const lo = Math.min(...st.ratings), hi = Math.max(...st.ratings);
+  let lo = Infinity, hi = -Infinity;
+  for (const v of st.ratings){ if (v < lo) lo = v; if (v > hi) hi = v; } // no spread: 100k+ values would overflow the stack
   const level = avg < 2.5 ? 'low' : avg < 3.5 ? 'mid' : 'high';
   const range = lo !== hi ? ` <span class="ratingRange" title="Ratings vary across this customer's tickets">(${lo}–${hi})</span>` : '';
   const pips = [1,2,3,4,5].map(i => `<span class="pip${i <= Math.round(avg) ? ' on' : ''}"></span>`).join('');
@@ -1471,8 +1567,8 @@ function render(){
   renderComplaintPanel(has.complaint ? cIndex : 'none');
 
   // data preview (in Settings): union of every header across all loaded rows
-  const headerSet = new Set();
-  rows.forEach(r => Object.keys(r).forEach(h => headerSet.add(h)));
+  const headerSet = new Set(), seenCols = new Set();
+  for (const r of rows){ const rc = rowCols(r); if (!seenCols.has(rc)){ seenCols.add(rc); rc.headers.forEach(h => headerSet.add(h)); } }
   const headers = [...headerSet];
   let preview = '<div class="tableWrap"><table><thead><tr>';
   preview += headers.map(h => `<th>${esc(h)}</th>`).join('') + '</tr></thead><tbody>';
@@ -1491,8 +1587,13 @@ function loadLog(){
   } catch (e) { return []; }
 }
 function saveLog(log){
-  try { localStorage.setItem(LOG_KEY, JSON.stringify(log)); return true; }
-  catch (e) { alert('Could not save the snapshot — browser storage is unavailable or full.'); return false; }
+  const warn = $('logWarn');
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(log)); warn.textContent = ''; return true; }
+  catch (e) {
+    // shown inline rather than with alert(): an alert would freeze an unattended tab at snapshot time
+    warn.textContent = 'Couldn\u2019t save the snapshot \u2014 this browser\u2019s storage is full or blocked. Download the log as CSV, then clear it to free space.';
+    return false;
+  }
 }
 function currentTotals(){
   const agents = new Set(), customers = new Set();
@@ -1570,6 +1671,7 @@ const AUTO_KEY = 'ticketDashboardAutoSnapshot';
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const AUTO_DEFAULTS = { enabled: false, time: '17:00', days: [1,2,3,4,5], lastDate: null };
 let autoBusy = false;
+let autoNote = '';
 
 function getAuto(){
   let a = null;
@@ -1617,7 +1719,15 @@ function updateAutoStatus(note){
   el.innerHTML = esc(txt) + ' <span style="opacity:.8">Keep this page open (a background tab is fine) — snapshots can’t be taken while it’s closed.</span>';
 }
 
-async function checkAutoSnapshot(){
+// With the dashboard open in several tabs, a browser lock lets only one tab at a time
+// check-and-log, so the 5 PM snapshot isn't recorded twice.
+function checkAutoSnapshot(){
+  if (navigator.locks && navigator.locks.request){
+    return navigator.locks.request('ticketDashboardAutoSnapshot', { ifAvailable: true }, lock => lock ? checkAutoSnapshotInner() : updateAutoStatus());
+  }
+  return checkAutoSnapshotInner();
+}
+async function checkAutoSnapshotInner(){
   const a = getAuto();
   if (!a.enabled || autoBusy) { updateAutoStatus(); return; }
   const now = new Date();
@@ -1636,10 +1746,13 @@ async function checkAutoSnapshot(){
       latest.lastDate = dateKey(now);
       saveAuto(latest);
       renderLog();
+    } else {
+      autoNote = 'Today\u2019s snapshot couldn\u2019t be saved (storage full) \u2014 will retry.';
     }
   } finally {
     autoBusy = false;
-    updateAutoStatus();
+    updateAutoStatus(autoNote);
+    autoNote = '';
   }
 }
 

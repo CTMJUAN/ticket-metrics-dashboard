@@ -13,6 +13,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.13 | Review + stress-test fixes: Windows-1252/UTF-16 files, title rows and `sep=` lines, unterminated quotes, non-CSV files rejected, Excel serial dates, non-English complaint labels, no blocking alert when storage is full, one auto snapshot across tabs, crash fix for very large customers, ~35% faster on big files |
 | 2.12 | Status breakdown treats "Ticket_finished" (and other underscore/hyphen/"Ticket" variants) as "Finished"; "Ticket_unfinished" now correctly excluded |
 | 2.11 | Combine complaint types: automatic merging of spelling variants, suggested and manual combinations in Settings, blank complaints ignored |
 | 2.10 | Per-customer breakdown shows each customer's latest ticket date, sorted newest first, 10 per page with Newer/Older paging |
