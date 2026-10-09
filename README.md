@@ -16,6 +16,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 3.4 | Top 5 Complaints: chart shows the top 5 (category or type), with Show all to expand a full ranked list with counts and shares |
 | 3.3 | Fix: newly created tickets (work-log event ticket_created) now appear in In Progress right away, and move to the totals once finished |
 | 3.2 | In Progress counter next to Top Complaints: running + paused tickets from exports and work logs, longest-open first |
 | 3.1 | Merges ticket-dashboard-3.0 (Claude Code: Title Case labels, summary cards no longer forced to capitals) into 2.22; empty-log message follows the snapshot button's label |

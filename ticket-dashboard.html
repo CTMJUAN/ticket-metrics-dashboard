@@ -108,6 +108,16 @@ svg text.pieLabel{fill:#fff;font-size:13px;font-weight:600;}
 .cgSuggest .cgWhat{flex:1;min-width:200px;}
 .btnSmall{font-size:.78rem;padding:4px 10px;}
 .chartNote{color:var(--sub);font-size:.75rem;margin-top:6px;}
+.cExpand{margin-top:8px;align-self:flex-start;}
+.cAllWrap{max-height:340px;overflow-y:auto;margin-top:8px;border-top:1px solid var(--border);}
+table.cAll{min-width:0;font-size:.8rem;}
+table.cAll td{padding:5px 6px;white-space:normal;vertical-align:top;}
+.cRank{color:var(--sub);width:1.8em;text-align:right;}
+.cName{overflow-wrap:anywhere;}
+.cNum,.cPct{text-align:right;white-space:nowrap;width:1%;}
+.cPct{color:var(--sub);}
+.cBar{height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden;}
+.cBar span{display:block;height:100%;background:var(--accent);}
 .chartHead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;}
 .chartHead h2{margin:0;}
 .seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
@@ -229,7 +239,7 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 
     <div class="section" id="complaintSection">
       <h2 data-label="complaintTypes">Complaint types</h2>
-      <p class="sub" style="margin-top:-6px;">Combine labels that mean the same thing so the Top complaints chart (Type view) counts them together. Differences in capitals, spacing, punctuation and plurals (e.g. “Password reset” / “password-resets”) are combined automatically, and blank complaint values are ignored.</p>
+      <p class="sub" style="margin-top:-6px;">Combine labels that mean the same thing so the Top 5 Complaints chart (Type view) counts them together. Differences in capitals, spacing, punctuation and plurals (e.g. “Password reset” / “password-resets”) are combined automatically, and blank complaint values are ignored.</p>
       <div id="complaintPanel"><p class="empty">Load data to see complaint types.</p></div>
     </div>
 
@@ -308,9 +318,11 @@ const LABELS = {
 
   // ── Charts ─────────────────────────────────────────────────────────────────
   statusChart:          'Status Breakdown',
-  complaintsChart:      'Top Complaints',
+  complaintsChart:      'Top 5 Complaints',
   category:             'Category',                      // switch on the Top complaints chart
   type:                 'Type',                          // switch on the Top complaints chart
+  showAllComplaints:    'Show all',                      // button under the chart, followed by the count
+  showTopComplaints:    'Show top 5',
   topCustomersChart:    'Top 5 Customers by Ticket Count',
   otherCustomers:       'All Other Customers',           // grey slice of the pie
 
@@ -1926,10 +1938,34 @@ function showComplaintView(){
   try { pref = localStorage.getItem(CVIEW_KEY); } catch (e) {}
   // use the saved choice if that view exists in this data; otherwise whichever one does (category first)
   const view = complaintViews[pref] ? pref : (complaintViews.category ? 'category' : 'type');
-  body.innerHTML = complaintViews[view];
+  const v = complaintViews[view];
+  const total = v.all.reduce((n, e) => n + e.value, 0);
+  let html = hBarChartSVG(v.all.slice(0, 5), { width: 460, leftLabelWidth: 140 });
+  if (v.all.length > 5){
+    if (complaintExpanded){
+      // full ranked list, every complaint (or category), with its share of tickets
+      const max = v.all[0].value || 1;
+      html += '<div class="cAllWrap"><table class="cAll"><tbody>' + v.all.map((e, i) => {
+        const pct = total ? e.value / total * 100 : 0;
+        return `<tr title="${esc(e.tip || e.label)}"><td class="cRank">${i + 1}</td><td class="cName">${esc(e.label)}<div class="cBar"><span style="width:${(e.value / max * 100).toFixed(1)}%"></span></div></td><td class="cNum">${e.value.toLocaleString()}</td><td class="cPct">${pct < 1 && pct > 0 ? '<1' : Math.round(pct)}%</td></tr>`;
+      }).join('') + '</tbody></table></div>';
+    }
+    html += `<button class="btnGhost btnSmall cExpand" data-cexpand aria-expanded="${complaintExpanded}">${complaintExpanded ? esc(L.showTopComplaints) : `${esc(L.showAllComplaints)} (${v.all.length.toLocaleString()})`}</button>`;
+  }
+  if (v.notes) html += `<div class="chartNote">${v.notes}</div>`;
+  body.innerHTML = html;
   document.querySelectorAll('#complaintCard [data-cview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cview === view)));
 }
+// expanded list stays open across refreshes and when switching Category / Type
+let complaintExpanded = false;
 $('output').addEventListener('click', e => {
+  const x = e.target.closest('[data-cexpand]');
+  if (x){
+    complaintExpanded = !complaintExpanded;
+    showComplaintView();
+    $('complaintBody').querySelector('[data-cexpand]')?.focus({ preventScroll: true });
+    return;
+  }
   const b = e.target.closest('[data-cview]');
   if (!b || b.disabled) return;
   try { localStorage.setItem(CVIEW_KEY, b.dataset.cview); } catch (err) {}
@@ -2051,12 +2087,12 @@ function render(){
   // Top complaints: one chart with a Category / Type switch
   complaintViews = { category: null, type: null };
   if (has.complaint){
-    const entries = Object.entries(complaints).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,value])=>({label,value}));
+    const entries = Object.entries(complaints).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).map(([label,value])=>({label,value}));
     const notes = [];
     if (cIndex.blanks) notes.push(`${cIndex.blanks.toLocaleString()} ticket(s) with no complaint type left out.`);
     if (cIndex.groups.length) notes.push(`${cIndex.groups.length} combined type(s).`);
     notes.push('<a href="#" data-open-complaints>Combine similar types</a>');
-    complaintViews.type = hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + `<div class="chartNote">${notes.join(' ')}</div>`;
+    complaintViews.type = { all: entries, notes: notes.join(' ') };
   }
   if (has.category){
     // categories get the same automatic tidying as types (capitals, spacing, plurals, blanks), keyed the same way
@@ -2085,11 +2121,11 @@ function render(){
       const top = [...c.types].sort((a, b) => b[1] - a[1]);
       const tip = `${label}: ${c.count.toLocaleString()}` + (top.length ? '\n' + top.slice(0, 5).map(([t, n]) => `  ${t} — ${n.toLocaleString()} (${Math.round(n / c.count * 100)}%)`).join('\n') + (top.length > 5 ? `\n  +${top.length - 5} more type(s)` : '') : '');
       return { label, value: c.count, tip };
-    }).sort((a, b) => b.value - a.value).slice(0, 8);
+    }).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
     const notes = [];
     if (catBlanks) notes.push(`${catBlanks.toLocaleString()} ticket(s) with no category left out.`);
     if (has.complaint) notes.push('Hover a bar to see the complaint types inside it.');
-    complaintViews.category = hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + (notes.length ? `<div class="chartNote">${notes.join(' ')}</div>` : '');
+    complaintViews.category = { all: entries, notes: notes.join(' ') };
   }
   if (complaintViews.type || complaintViews.category){
     charts.push(`<div class="chartCard" id="complaintCard"><div class="chartHead"><h2>${esc(L.complaintsChart)}</h2><div class="seg" role="group" aria-label="Show complaints by">
