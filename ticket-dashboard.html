@@ -932,7 +932,7 @@ function detectColsFromHeaders(headers){
     // when the ticket happened: prefer finish/close time, then a generic date, then created/start
     date:      pick(headers, ['finished','finishedat','finisheddate','finishtime','finishedtime','closed','closedat','closeddate','resolvedat','resolveddate','completedat','completeddate','enddate','endtime','date','ticketdate','eventdate','datetime','createdat','createddate','created','opened','openeddate','started','startedat','startdate','starttime','timestamp'],
                     /date|finish|closed|resolved|completed|created|opened|start|timestamp/i, /duration|elapsed|spent|handle|status|state/i),
-    // per-customer 1–5 rating; deliberately NOT a bare "Rating" match, so a CSAT/satisfaction column isn't picked up by mistake
+    // per-customer 0–5 rating; deliberately NOT a bare "Rating" match, so a CSAT/satisfaction column isn't picked up by mistake
     rating:    pick(headers, ['competencytrainingrating','competencyrating','trainingrating','competencytraining','competency','training','traininglevel','competencylevel','proficiency'],
                     /competen|training|proficien|skill.?level/i)
   };
@@ -985,6 +985,8 @@ const statusLabel = memo(function statusLabel(v){
   if (!s) return '(blank)';
   return s.charAt(0).toUpperCase() + s.slice(1);
 });
+// work-log event names from the tracker: ticket_started, ticket_finished, ticket_edited, competency_rated, …
+const isLogEvent = memo(v => /^(ticket|competency)_[a-z_]+$/i.test(String(v ?? '').trim()));
 const isFinished = memo(function isFinished(v){
   const s = statusLabel(v).toLowerCase(); // underscores → spaces, so "Ticket_unfinished" is still caught as unfinished
   if (/\b(un|not\s*|non-?\s*)finish/.test(s)) return false; // "Unfinished", "Not Finished"
@@ -1020,12 +1022,12 @@ function secondsToHours(total){ return (total/3600).toLocaleString(undefined, { 
 const dur = r => durSec.get(r) || 0;
 // a cell's value with stray spaces removed, so "Ann" and "Ann " count as the same agent
 const val = (r, col) => col ? String(r[col] ?? '').trim() : '';
-// a 1–5 rating cell: "4", "4.5", "4/5", "4 of 5" → number; anything else (blank, "N/A", 7) → null
+// a 0–5 rating cell (the tracker's Competency / Training Readiness scale): "0", "4", "4.5", "4/5", "4 of 5" → number; anything else (blank, "N/A", 7) → null
 function parseRating(v){
   const m = String(v ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*(?:\/\s*5|of\s*5|out\s*of\s*5)?$/i);
   if (!m) return null;
   const n = parseFloat(m[1]);
-  return n >= 1 && n <= 5 ? n : null;
+  return n >= 0 && n <= 5 ? n : null;
 }
 /* ---------- complaint types: blanks, automatic variants, user-combined groups ----------
    Every complaint value is reduced to a "key" that ignores capitals, spacing,
@@ -1443,11 +1445,47 @@ function rebuild(){
   for (const r of sources.folder.rows) raw.push(r);
   for (const r of sources.manual.rows) raw.push(r);
 
-  // keep only rows whose own status/event column says Finished
-  const finished = raw.filter(r => {
+  // Work logs (Event column: ticket_started, ticket_finished, ticket_edited, competency_rated, …)
+  // record a ticket's *current* customer, complaint, category and rating on every row. A rating or
+  // edit made after the ticket was finished only appears on later rows, so each finished ticket
+  // takes those fields from its latest row; a ticket whose latest event is a deletion is dropped.
+  const latestEvent = new Map(); // agent||ticketId → { row, ms, order }
+  raw.forEach((r, order) => {
     const rc = rowCols(r);
-    return rc.status ? isFinished(r[rc.status]) : true; // no status column → keep, can't judge
+    if (!rc.status || !rc.ticketId || !isLogEvent(r[rc.status])) return;
+    const id = String(r[rc.ticketId] ?? '').trim();
+    if (!id) return;
+    const key = (rc.agent ? String(r[rc.agent] ?? '').trim() + '||' : '') + id;
+    const ms = rc.date ? parseDate(val(r, rc.date)) : null;
+    const prev = latestEvent.get(key);
+    const later = !prev || (ms !== null && prev.ms !== null ? (ms > prev.ms || (ms === prev.ms && order > prev.order)) : order > prev.order);
+    if (later) latestEvent.set(key, { row: r, ms, order });
   });
+
+  // keep only rows whose own status/event column says Finished
+  let deletedAfter = 0, updatedFromLog = 0;
+  const finished = [];
+  for (const r of raw){
+    const rc = rowCols(r);
+    if (rc.status && !isFinished(r[rc.status])) continue; // no status column → keep, can't judge
+    if (!rc.status || !isLogEvent(r[rc.status])){ finished.push(r); continue; }
+    const key = (rc.agent ? String(r[rc.agent] ?? '').trim() + '||' : '') + String(r[rc.ticketId] ?? '').trim();
+    const last = latestEvent.get(key);
+    if (!last || last.row === r){ finished.push(r); continue; }
+    const lc = rowCols(last.row);
+    if (/delet/i.test(String(last.row[lc.status] ?? ''))){ deletedAfter++; continue; }
+    // copy the finished row (its time and duration stay), then bring in the latest values
+    const merged = Object.assign({}, r);
+    let changed = false;
+    for (const f of ['customer', 'complaint', 'category', 'rating']){
+      if (!lc[f]) continue;
+      const target = rc[f] || lc[f];
+      const v = last.row[lc[f]] ?? '';
+      if (String(merged[target] ?? '') !== String(v)){ merged[target] = v; changed = true; }
+    }
+    if (changed) updatedFromLog++;
+    finished.push(changed ? merged : r);
+  }
 
   // collapse repeated event rows for the same ticket + agent
   const seen = new Set();
@@ -1470,7 +1508,7 @@ function rebuild(){
     durSec.set(r, secs);
   });
 
-  lastStats = { excludedStatus: raw.length - finished.length, excludedDupes: finished.length - rows.length, unreadableDurations: unreadable };
+  lastStats = { excludedStatus: raw.length - finished.length - deletedAfter, excludedDupes: finished.length - rows.length, unreadableDurations: unreadable, deletedAfter, updatedFromLog };
 
   renderFileList();
   updateDataSourceSummary();
@@ -1505,6 +1543,8 @@ function renderFileList(){
   const notes = [];
   if (lastStats.excludedStatus) notes.push(`${lastStats.excludedStatus.toLocaleString()} non-Finished row(s) excluded`);
   if (lastStats.excludedDupes) notes.push(`${lastStats.excludedDupes.toLocaleString()} duplicate event row(s) for already-counted tickets collapsed`);
+  if (lastStats.updatedFromLog) notes.push(`${lastStats.updatedFromLog.toLocaleString()} finished ticket(s) updated with a later rating or edit from the work log`);
+  if (lastStats.deletedAfter) notes.push(`${lastStats.deletedAfter.toLocaleString()} ticket(s) left out because they were deleted after finishing`);
   if (notes.length) txt += ` <span>(${notes.join('; ')})</span>`;
   if (lastStats.unreadableDurations) txt += `<div class="warn" style="margin-top:4px;">${lastStats.unreadableDurations.toLocaleString()} ticket(s) have a duration value that couldn't be read and were counted as 0 time.</div>`;
   if (manualNotes.length) txt += `<div class="warn" style="margin-top:4px;">${manualNotes.map(esc).join(' · ')}</div>`;
@@ -1721,9 +1761,9 @@ function render(){
       tables += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No ticket date column found in the loaded files. Dates are read from a column such as \u201cDate\u201d, \u201cFinished\u201d, \u201cClosed\u201d or \u201cCreated\u201d.</p>';
     }
     if (!has.rating){
-      tables += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No rating column found in the loaded files. Ratings are read from a column whose header contains \u201cCompetency\u201d or \u201cTraining\u201d (e.g. \u201cCompetency / Training Rating\u201d), with values 1\u20135.</p>';
+      tables += '<p class="sub" style="margin:8px 0 0;font-size:.8rem;">No rating column found in the loaded files. Ratings are read from a column whose header contains \u201cCompetency\u201d or \u201cTraining\u201d (e.g. \u201cCompetency / Training Rating\u201d), with values 0\u20135.</p>';
     } else if (badRatings){
-      tables += `<p class="sub warn" style="margin:8px 0 0;font-size:.8rem;">${badRatings.toLocaleString()} rating value(s) weren\u2019t a number from 1 to 5 and were left out of the averages.</p>`;
+      tables += `<p class="sub warn" style="margin:8px 0 0;font-size:.8rem;">${badRatings.toLocaleString()} rating value(s) weren\u2019t a number from 0 to 5 and were left out of the averages.</p>`;
     }
     tables += '</div>';
   } else {

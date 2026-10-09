@@ -13,6 +13,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.20 | Ratings accept the tracker's 0–5 scale; work logs: finished tickets take their latest rating/customer/complaint/category, tickets deleted after finishing are left out; Category read from work logs when present |
 | 2.19 | Summary cards: Daily / Cumulative switch for tickets, customers and hours, with day-by-day navigation |
 | 2.18 | Top complaints chart with a Category / Type switch (category column read automatically; hover a category to see its types); capitalised labels preferred |
 | 2.17 | Main page order: summary cards → charts → Metrics over time → per-agent and per-customer breakdowns |
