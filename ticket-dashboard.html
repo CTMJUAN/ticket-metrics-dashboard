@@ -413,29 +413,58 @@ function pieChartHTML(slices){
   return `<div class="pieWrap">${svg}<ul class="pieLegend">${legend}</ul></div>`;
 }
 
+// round axis tops (e.g. 240, 100, 12.5) so gridlines land on tidy numbers
+function niceStep(raw){
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+function niceMax(v){ return v > 0 && isFinite(v) ? niceStep(v / 4) * 4 : 4; }
+function fmtAxis(v, step){ return v.toLocaleString(undefined, { maximumFractionDigits: step < 1 ? 1 : 0 }); }
+
+// Series with axis:'right' get their own scale on the right edge, so a small-number
+// line (hours) isn't flattened under a big-number line (tickets).
 function lineChartSVG(labels, seriesList, opts){
   opts = opts || {};
   const width = opts.width || 600, height = opts.height || 220;
-  const padL = 40, padR = 30, padT = 10, padB = 24;
+  const hasRight = seriesList.some(s => s.axis === 'right');
+  const padL = 44, padR = hasRight ? 48 : 30, padT = 24, padB = 24;
   const plotW = width - padL - padR, plotH = height - padT - padB;
   const n = labels.length;
-  let maxVal = 1;
-  seriesList.forEach(s => s.values.forEach(v => { if (isFinite(v) && v > maxVal) maxVal = v; }));
+  const maxOf = side => {
+    let m = 0;
+    seriesList.filter(s => (s.axis === 'right') === (side === 'right')).forEach(s => s.values.forEach(v => { if (isFinite(v) && v > m) m = v; }));
+    return niceMax(m);
+  };
+  const maxL = maxOf('left'), maxR = hasRight ? maxOf('right') : 1;
   const x = i => n <= 1 ? padL + plotW/2 : padL + (i/(n-1)) * plotW;
-  const y = v => padT + plotH - ((isFinite(v) ? v : 0) / maxVal) * plotH;
+  const y = (v, s) => padT + plotH - ((isFinite(v) ? v : 0) / (s && s.axis === 'right' ? maxR : maxL)) * plotH;
+  const left = seriesList.find(s => s.axis !== 'right'), right = seriesList.find(s => s.axis === 'right');
 
   let svg = `<svg viewBox="0 0 ${width} ${height}" width="100%" xmlns="http://www.w3.org/2000/svg" role="img">`;
+  // axis titles, coloured like their lines
+  if (left && left.title) svg += `<text x="${padL - 6}" y="12" text-anchor="end" style="fill:${left.color};font-weight:600;">${esc(left.title)}</text>`;
+  if (right && right.title) svg += `<text x="${width - padR + 6}" y="12" text-anchor="start" style="fill:${right.color};font-weight:600;">${esc(right.title)}</text>`;
   for (let g = 0; g <= 4; g++){
     const gy = padT + (plotH / 4) * g;
     svg += `<line class="grid-line" x1="${padL}" y1="${gy}" x2="${width-padR}" y2="${gy}"></line>`;
-    svg += `<text class="sub-text" x="${padL - 6}" y="${gy + 4}" text-anchor="end">${Math.round(maxVal * (1 - g/4)).toLocaleString()}</text>`;
+    const lv = maxL * (1 - g/4);
+    svg += `<text class="sub-text" x="${padL - 6}" y="${gy + 4}" text-anchor="end">${fmtAxis(lv, maxL / 4)}</text>`;
+    if (hasRight){
+      const rv = maxR * (1 - g/4);
+      svg += `<text x="${width - padR + 6}" y="${gy + 4}" text-anchor="start" style="fill:${right.color}">${fmtAxis(rv, maxR / 4)}${esc(right.unit || '')}</text>`;
+    }
   }
   seriesList.forEach(s => {
     if (n === 1){
-      svg += `<circle cx="${x(0)}" cy="${y(s.values[0])}" r="4" fill="${s.color || 'var(--accent)'}"></circle>`;
+      svg += `<circle cx="${x(0)}" cy="${y(s.values[0], s)}" r="4" style="fill:${s.color || 'var(--accent)'}"></circle>`;
     } else {
-      const pts = s.values.map((v,i) => `${x(i)},${y(v)}`).join(' ');
+      const pts = s.values.map((v,i) => `${x(i).toFixed(1)},${y(v, s).toFixed(1)}`).join(' ');
       svg += `<polyline class="${s.cls}" points="${pts}"></polyline>`;
+      // small dots on each snapshot, with the exact value on hover
+      if (n <= 120) s.values.forEach((v, i) => {
+        svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(v, s).toFixed(1)}" r="2.5" style="fill:${s.color}"><title>${esc(labels[i])} — ${esc(s.title || '')}: ${isFinite(v) ? Number(v).toLocaleString() : '—'}${esc(s.unit || '')}</title></circle>`;
+      });
     }
   });
   const idxs = n <= 1 ? [0] : [...new Set([0, Math.floor((n-1)/2), n-1])];
@@ -1675,14 +1704,16 @@ function renderTrend(log){
   const w = Math.max(300, Math.round($('trendChart').clientWidth - 34) || 1000);
   const labels = log.map(e => new Date(e.timestamp).toLocaleDateString());
   let html = `<div class="chartWrap">${lineChartSVG(labels, [
-    { cls:'line-tickets', color:'#4f6df5', values: log.map(e => Number(e.tickets)) },
-    { cls:'line-hours', color:'#34d399', values: log.map(e => Number(e.hours)) }
-  ], { width: w, height: w < 600 ? 200 : 240 })}</div>`;
+    { cls:'line-tickets', color:'#4f6df5', title:'Tickets', values: log.map(e => Number(e.tickets)) },
+    { cls:'line-hours', color:'#34d399', title:'Hours', unit:' h', axis:'right', values: log.map(e => Number(e.hours)) }
+  ], { width: w, height: w < 600 ? 210 : 250 })}</div>`;
   const first = new Date(log[0].timestamp), last = new Date(log[log.length - 1].timestamp);
   const span = log.length === 1
     ? '1 snapshot so far \u2014 the lines fill in as more are logged.'
     : `${log.length} snapshots, ${esc(first.toLocaleDateString())} \u2013 ${esc(last.toLocaleDateString())}.`;
-  html += `<div class="legend"><span><span class="dot" style="background:#4f6df5;"></span>Tickets</span><span><span class="dot" style="background:#34d399;"></span>Hours</span><span style="margin-left:auto;">${span}</span></div>`;
+  const latest = log[log.length - 1];
+  const fmtN = v => isFinite(Number(v)) ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 }) : '\u2014';
+  html += `<div class="legend"><span><span class="dot" style="background:#4f6df5;"></span>Tickets (left scale) \u00b7 latest ${fmtN(latest.tickets)}</span><span><span class="dot" style="background:#34d399;"></span>Hours worked (right scale) \u00b7 latest ${fmtN(latest.hours)} h</span><span style="margin-left:auto;">${span}</span></div>`;
   $('trendChart').innerHTML = html;
 }
 let trendResizeTimer = null, trendLastWidth = 0;
