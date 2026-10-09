@@ -13,6 +13,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 2.14 | Snapshot graph (Metrics over time) back on the main page; snapshot buttons, schedule and log table stay in Settings |
 | 2.13 | Review + stress-test fixes: Windows-1252/UTF-16 files, title rows and `sep=` lines, unterminated quotes, non-CSV files rejected, Excel serial dates, non-English complaint labels, no blocking alert when storage is full, one auto snapshot across tabs, crash fix for very large customers, ~35% faster on big files |
 | 2.12 | Status breakdown treats "Ticket_finished" (and other underscore/hyphen/"Ticket" variants) as "Finished"; "Ticket_unfinished" now correctly excluded |
 | 2.11 | Combine complaint types: automatic merging of spelling variants, suggested and manual combinations in Settings, blank complaints ignored |

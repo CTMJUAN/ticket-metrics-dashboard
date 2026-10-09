@@ -90,6 +90,9 @@ svg text.pieLabel{fill:#fff;font-size:13px;font-weight:600;}
 .cgSuggest .cgWhat{flex:1;min-width:200px;}
 .btnSmall{font-size:.78rem;padding:4px 10px;}
 .chartNote{color:var(--sub);font-size:.75rem;margin-top:6px;}
+.trendHead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+.trendHead h2{margin:0;}
+.trendLink{color:var(--accent);font-size:.82rem;}
 .chartNote a{color:var(--accent);}
 .chartWrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;}
 .tableWrap{overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:12px;background:var(--card);}
@@ -109,7 +112,7 @@ svg .bar{fill:var(--accent);}
 svg .grid-line{stroke:var(--border);stroke-width:1;}
 svg .line-tickets{stroke:#4f6df5;fill:none;stroke-width:2;}
 svg .line-hours{stroke:#34d399;fill:none;stroke-width:2;}
-.legend{display:flex;gap:16px;font-size:.78rem;color:var(--sub);margin-top:8px;}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.78rem;color:var(--sub);margin-top:8px;}
 .legend span{display:inline-flex;align-items:center;gap:6px;}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
 .settingsOverlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;justify-content:flex-end;z-index:100;}
@@ -126,6 +129,14 @@ svg .line-hours{stroke:#34d399;fill:none;stroke-width:2;}
 <p id="dataSourceSummary" class="sub"></p>
 
 <div id="output"></div>
+
+<div id="trendSection" class="section" style="display:none;">
+  <div class="trendHead">
+    <h2>Metrics over time</h2>
+    <a href="#" data-open-snapshots class="trendLink">Snapshot settings</a>
+  </div>
+  <div id="trendChart"></div>
+</div>
 
 <!-- Settings overlay: synced folder, manual upload, data preview, theme and log live here to keep the front page uncluttered -->
 <div id="settingsOverlay" class="settingsOverlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -193,9 +204,9 @@ svg .line-hours{stroke:#34d399;fill:none;stroke-width:2;}
       <div id="previewWrap"><p class="empty">No data loaded yet.</p></div>
     </div>
 
-    <div class="section">
+    <div class="section" id="snapshotSection">
       <h2>Metrics log over time</h2>
-      <p class="sub" style="margin-top:-6px;">Saves a timestamped snapshot of the current totals in this browser, so you can track trends across uploads (e.g. daily exports).</p>
+      <p class="sub" style="margin-top:-6px;">Saves a timestamped snapshot of the current totals in this browser, so you can track trends across uploads (e.g. daily exports). The graph of your snapshots is on the main page.</p>
       <div class="controls">
         <button id="logBtn" class="btnPrimary" disabled>Log this snapshot</button>
         <button id="downloadLogBtn" class="btnGhost">Download log as CSV</button>
@@ -1641,6 +1652,7 @@ function renderLog(){
   $('downloadLogBtn').disabled = $('clearLogBtn').disabled = !log.length;
   if (!log.length){
     wrap.innerHTML = '<p class="empty">No snapshots logged yet. Load data, then click \"Log this snapshot\" or turn on automatic snapshots below.</p>';
+    renderTrend(log);
     return;
   }
   let html = '<div class="tableWrap"><table><thead><tr><th>Logged At</th><th>Type</th><th>Tickets</th><th>Customers</th><th>Agents</th><th>Hours</th></tr></thead><tbody>';
@@ -1650,14 +1662,45 @@ function renderLog(){
   });
   html += '</tbody></table></div>';
 
+  wrap.innerHTML = html;
+  renderTrend(log);
+}
+
+// the snapshot graph lives on the main page; it appears once there's at least one snapshot
+function renderTrend(log){
+  const section = $('trendSection');
+  if (!log.length){ section.style.display = 'none'; $('trendChart').innerHTML = ''; return; }
+  section.style.display = '';
+  // draw at the real on-screen width so the text stays readable on a phone (scaling a wide drawing down shrinks it)
+  const w = Math.max(300, Math.round($('trendChart').clientWidth - 34) || 1000);
   const labels = log.map(e => new Date(e.timestamp).toLocaleDateString());
-  html += `<div class="chartWrap" style="margin-top:12px;">${lineChartSVG(labels, [
+  let html = `<div class="chartWrap">${lineChartSVG(labels, [
     { cls:'line-tickets', color:'#4f6df5', values: log.map(e => Number(e.tickets)) },
     { cls:'line-hours', color:'#34d399', values: log.map(e => Number(e.hours)) }
-  ])}</div>`;
-  html += `<div class="legend"><span><span class="dot" style="background:#4f6df5;"></span>Tickets</span><span><span class="dot" style="background:#34d399;"></span>Hours</span></div>`;
-  wrap.innerHTML = html;
+  ], { width: w, height: w < 600 ? 200 : 240 })}</div>`;
+  const first = new Date(log[0].timestamp), last = new Date(log[log.length - 1].timestamp);
+  const span = log.length === 1
+    ? '1 snapshot so far \u2014 the lines fill in as more are logged.'
+    : `${log.length} snapshots, ${esc(first.toLocaleDateString())} \u2013 ${esc(last.toLocaleDateString())}.`;
+  html += `<div class="legend"><span><span class="dot" style="background:#4f6df5;"></span>Tickets</span><span><span class="dot" style="background:#34d399;"></span>Hours</span><span style="margin-left:auto;">${span}</span></div>`;
+  $('trendChart').innerHTML = html;
 }
+let trendResizeTimer = null, trendLastWidth = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(trendResizeTimer);
+  trendResizeTimer = setTimeout(() => {
+    const w = $('trendChart').clientWidth;
+    if (w && Math.abs(w - trendLastWidth) > 20){ trendLastWidth = w; renderTrend(loadLog()); }
+  }, 150);
+});
+
+// "Snapshot settings" link → open Settings at the snapshot controls
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-open-snapshots]')) return;
+  e.preventDefault();
+  openSettings();
+  $('snapshotSection').scrollIntoView({ block: 'start' });
+});
 
 $('logBtn').addEventListener('click', logSnapshot);
 $('clearLogBtn').addEventListener('click', clearLog);
