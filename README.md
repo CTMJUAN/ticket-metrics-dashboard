@@ -8,11 +8,15 @@ A single-file HTML dashboard for ticket export CSVs. Open `ticket-dashboard.html
 - Metrics log with manual and scheduled automatic snapshots, exportable as CSV and importable from other browsers/computers; graph with selectable lines
 - Light and dark themes
 
+## Changing labels
+Open `ticket-dashboard.html` in a text editor and search for **EDIT LABELS HERE** (near the top of the script). Every heading, card label, column header, chart title and button label is listed there; change only the text inside the quotes, save, and reload the page.
+
 ## Versions
 Each version is one commit on `main` whose message starts with its version number (e.g. `v2.9 — …`). The file name stays the same; use the commit history to compare versions or roll back.
 
 | Version | Changes |
 |---|---|
+| 2.22 | All headings, card labels, column headers, chart titles and button labels gathered in one `LABELS` block (search "EDIT LABELS HERE") for easy wording/capitalisation changes |
 | 2.21 | Tickets labelled "test" (customer, complaint, category or agent) left out of all metrics; switch and list in Settings → Data filters |
 | 2.20 | Ratings accept the tracker's 0–5 scale; work logs: finished tickets take their latest rating/customer/complaint/category, tickets deleted after finishing are left out; Category read from work logs when present |
 | 2.19 | Summary cards: Daily / Cumulative switch for tickets, customers and hours, with day-by-day navigation |

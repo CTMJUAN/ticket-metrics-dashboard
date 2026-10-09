@@ -28,7 +28,7 @@ p.sub{margin:0 0 20px;}
 #fileList{font-size:.8rem;color:var(--sub);margin-top:8px;word-break:break-word;}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
-.card .label{font-size:.75rem;color:var(--sub);text-transform:uppercase;letter-spacing:.03em;}
+.card .label{font-size:.75rem;color:var(--sub);letter-spacing:.03em;} /* shown exactly as written in LABELS */
 .card .value{font-size:1.5rem;font-weight:600;margin-top:4px;}
 .card .cardSub{font-size:.75rem;color:var(--sub);margin-top:2px;}
 .kpiHead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:20px 0 -8px;}
@@ -144,8 +144,8 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 </head>
 <body>
 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-  <h1>🎫 Ticket Metrics Dashboard</h1>
-  <button id="settingsBtn" class="btnGhost" style="margin-top:8px;">⚙ Settings</button>
+  <h1 id="pageHeading">🎫 Ticket Metrics Dashboard</h1>
+  <button id="settingsBtn" class="btnGhost" style="margin-top:8px;" data-label="settingsButton">⚙ Settings</button>
 </div>
 <p id="dataSourceSummary" class="sub"></p>
 
@@ -153,8 +153,8 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 
 <div id="trendSection" class="section" style="display:none;">
   <div class="trendHead">
-    <h2>Metrics over time</h2>
-    <a href="#" data-open-snapshots class="trendLink">Snapshot settings</a>
+    <h2 data-label="trendTitle">Metrics over time</h2>
+    <a href="#" data-open-snapshots class="trendLink" data-label="snapshotSettingsLink">Snapshot settings</a>
   </div>
   <div class="seriesPicker" id="trendSeries" role="group" aria-label="Lines shown on the graph"></div>
   <div id="trendChart"></div>
@@ -166,28 +166,28 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 <div id="settingsOverlay" class="settingsOverlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
   <div class="settingsPanel">
     <div class="settingsHeader">
-      <h2 id="settingsTitle" style="margin:0;font-size:1.1rem;">Settings</h2>
+      <h2 id="settingsTitle" style="margin:0;font-size:1.1rem;" data-label="settingsTitle">Settings</h2>
       <button id="settingsCloseBtn" class="btnGhost" aria-label="Close settings">✕</button>
     </div>
 
     <div class="section" style="margin-top:0;">
-      <h2>Appearance</h2>
+      <h2 data-label="appearance">Appearance</h2>
       <div class="controls">
         <button id="themeToggle" class="btnGhost">🌙 Dark mode</button>
       </div>
     </div>
 
     <div class="section">
-      <h2>Synced folder (automatic)</h2>
+      <h2 data-label="syncedFolder">Synced folder (automatic)</h2>
       <p class="sub" style="margin-top:-6px;">Point this at your local OneDrive/SharePoint-synced folder once, and it reads every .csv in it (including up to three levels of subfolders, e.g. per-agent folders) directly off disk — no uploading, no network request. Needs Chrome or Edge on desktop.</p>
       <div class="controls">
-        <button id="connectFolderBtn" class="btnPrimary">Connect synced folder…</button>
-        <button id="reconnectFolderBtn" class="btnPrimary" style="display:none;">Reconnect folder…</button>
-        <button id="refreshFolderBtn" class="btnGhost" style="display:none;">Refresh now</button>
-        <button id="disconnectFolderBtn" class="btnGhost" style="display:none;">Disconnect</button>
+        <button id="connectFolderBtn" data-label="connectFolder" class="btnPrimary">Connect synced folder…</button>
+        <button id="reconnectFolderBtn" data-label="reconnectFolder" class="btnPrimary" style="display:none;">Reconnect folder…</button>
+        <button id="refreshFolderBtn" data-label="refreshNow" class="btnGhost" style="display:none;">Refresh now</button>
+        <button id="disconnectFolderBtn" data-label="disconnect" class="btnGhost" style="display:none;">Disconnect</button>
       </div>
       <div class="controls">
-        <label for="refreshRate" class="sub" style="font-size:.85rem;">Check for changes</label>
+        <label for="refreshRate" class="sub" style="font-size:.85rem;" data-label="checkForChanges">Check for changes</label>
         <select id="refreshRate" style="font-size:.85rem;border-radius:8px;padding:6px 10px;border:1px solid var(--border);background:var(--card);color:var(--text);">
           <option value="30000">every 30 seconds</option>
           <option value="60000">every minute</option>
@@ -204,52 +204,52 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
     </div>
 
     <div class="section">
-      <h2>Or upload manually</h2>
+      <h2 data-label="uploadManually">Or upload manually</h2>
       <p class="sub" style="margin-top:-6px;">Add one or more ticket export CSVs by hand; they're combined with each other and with any synced-folder data into one view. Re-adding a file with the same name replaces the earlier copy.</p>
       <label class="dropzone" id="dropzone">
         <div>Click to add CSV file(s), or drag &amp; drop here — you can add more anytime</div>
         <input type="file" id="fileInput" accept=".csv,text/csv" multiple>
       </label>
       <div class="controls" style="margin-top:10px;">
-        <button id="clearManualBtn" class="btnGhost" disabled>Remove uploaded files</button>
+        <button id="clearManualBtn" data-label="removeUploads" class="btnGhost" disabled>Remove uploaded files</button>
       </div>
       <div id="fileList"></div>
     </div>
 
     <div class="section" id="complaintSection">
-      <h2>Complaint types</h2>
-      <p class="sub" style="margin-top:-6px;">Combine labels that mean the same thing so the Top complaint types chart counts them together. Differences in capitals, spacing, punctuation and plurals (e.g. “Password reset” / “password-resets”) are combined automatically, and blank complaint values are ignored.</p>
+      <h2 data-label="complaintTypes">Complaint types</h2>
+      <p class="sub" style="margin-top:-6px;">Combine labels that mean the same thing so the Top complaints chart (Type view) counts them together. Differences in capitals, spacing, punctuation and plurals (e.g. “Password reset” / “password-resets”) are combined automatically, and blank complaint values are ignored.</p>
       <div id="complaintPanel"><p class="empty">Load data to see complaint types.</p></div>
     </div>
 
     <div class="section" id="filterSection">
-      <h2>Data filters</h2>
-      <label class="autoLabel"><input type="checkbox" id="excludeTest" checked> Leave out tickets labelled “test”</label>
+      <h2 data-label="dataFilters">Data filters</h2>
+      <label class="autoLabel"><input type="checkbox" id="excludeTest" checked> <span data-label="excludeTest">Leave out tickets labelled “test”</span></label>
       <p class="sub" style="margin:6px 0 0;font-size:.8rem;">A ticket is left out when its customer, complaint, category or agent is “test”, “testing”, “test ticket” or a numbered one like “test 2” (any capitals). Labels that only contain the word, like “Self-test fault”, are kept.</p>
       <div id="testList" class="sub" style="margin-top:6px;font-size:.8rem;"></div>
     </div>
 
     <div class="section">
-      <h2>Data preview (first 50 rows)</h2>
+      <h2 data-label="dataPreview">Data preview (first 50 rows)</h2>
       <p class="sub" style="margin-top:-6px;">The raw rows behind the dashboard, after non-Finished and duplicate rows are removed.</p>
       <div id="previewWrap"><p class="empty">No data loaded yet.</p></div>
     </div>
 
     <div class="section" id="snapshotSection">
-      <h2>Metrics log over time</h2>
+      <h2 data-label="metricsLog">Metrics log over time</h2>
       <p class="sub" style="margin-top:-6px;">Saves a timestamped snapshot of the current totals in this browser, so you can track trends across uploads (e.g. daily exports). The graph of your snapshots is on the main page.</p>
       <div class="controls">
-        <button id="logBtn" class="btnPrimary" disabled>Log this snapshot</button>
-        <button id="downloadLogBtn" class="btnGhost">Download log as CSV</button>
-        <button id="clearLogBtn" class="btnGhost">Clear log</button>
+        <button id="logBtn" data-label="logSnapshot" class="btnPrimary" disabled>Log this snapshot</button>
+        <button id="downloadLogBtn" data-label="downloadLog" class="btnGhost">Download log as CSV</button>
+        <button id="clearLogBtn" data-label="clearLog" class="btnGhost">Clear log</button>
         <label class="btnGhost" style="font-size:.85rem;border-radius:8px;padding:7px 14px;cursor:pointer;border:1px solid var(--border);">
-          Import log CSV…<input type="file" id="importLogInput" accept=".csv,text/csv" multiple style="display:none;">
+          <span data-label="importLog">Import log CSV…</span><input type="file" id="importLogInput" accept=".csv,text/csv" multiple style="display:none;">
         </label>
       </div>
       <div id="importMsg" class="importMsg sub" role="status"></div>
       <div class="autoBox">
         <div class="controls" style="margin-bottom:6px;">
-          <label class="autoLabel"><input type="checkbox" id="autoEnabled"> Log a snapshot automatically at</label>
+          <label class="autoLabel"><input type="checkbox" id="autoEnabled"> <span data-label="autoSnapshot">Log a snapshot automatically at</span></label>
           <input type="time" id="autoTime" value="17:00" class="autoInput" aria-label="Automatic snapshot time">
         </div>
         <div class="controls" id="autoDays" role="group" aria-label="Days to take automatic snapshots" style="margin-bottom:6px;"></div>
@@ -264,6 +264,114 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 <script>
 'use strict';
 
+/* ╔═══════════════════════════════════════════════════════════════════════════╗
+   ║  ✏️  EDIT LABELS HERE                                                      ║
+   ║                                                                           ║
+   ║  Every heading, card label, column header, chart title and button label  ║
+   ║  on the dashboard comes from this list, so a change here shows up        ║
+   ║  everywhere that label is used.                                           ║
+   ║                                                                           ║
+   ║  • Change only the text inside the quotes '…' on the right.               ║
+   ║  • Keep the name on the left, the colon, the quotes and the comma.        ║
+   ║  • Save the file and reload the page in your browser to see it.           ║
+   ╚═══════════════════════════════════════════════════════════════════════════╝ */
+const LABELS = {
+  // ── Page ───────────────────────────────────────────────────────────────────
+  pageTitle:            'Ticket Metrics Dashboard',     // page heading and browser tab
+  pageIcon:             '🎫',                            // shown before the page heading ('' for none)
+  settingsButton:       '⚙ Settings',
+
+  // ── Summary cards (top of page) — shown exactly as typed, so ALL CAPS here = all caps on screen ──
+  daily:                'Daily',
+  cumulative:           'Cumulative',
+  today:                'Today',
+  latest:               'Latest',
+  totalTickets:         'TOTAL TICKETS',                 // Cumulative view
+  totalCustomers:       'TOTAL CUSTOMERS HELPED',        // Cumulative view
+  totalHours:           'TOTAL HOURS',                   // Cumulative view
+  dayTickets:           'TICKETS',                       // Daily view
+  dayCustomers:         'CUSTOMERS HELPED',              // Daily view
+  dayHours:             'HOURS',                         // Daily view
+  uniqueAgents:         'UNIQUE AGENTS',
+  avgTime:              'AVG TIME / TICKET',
+
+  // ── Charts ─────────────────────────────────────────────────────────────────
+  statusChart:          'Status breakdown',
+  complaintsChart:      'Top complaints',
+  category:             'Category',                      // switch on the Top complaints chart
+  type:                 'Type',                          // switch on the Top complaints chart
+  topCustomersChart:    'Top 5 customers by ticket count',
+  otherCustomers:       'All other customers',           // grey slice of the pie
+
+  // ── Metrics over time (snapshot graph) ─────────────────────────────────────
+  trendTitle:           'Metrics over time',
+  snapshotSettingsLink: 'Snapshot settings',
+  lineTickets:          'Tickets',
+  lineCustomers:        'Customers',
+  lineAgents:           'Agents',
+  lineHours:            'Hours worked',
+  hoursAxis:            'Hours',                         // title over the right-hand scale
+  countAxis:            'Count',                         // left scale title when several count lines are shown
+
+  // ── Per-agent breakdown table ──────────────────────────────────────────────
+  agentsTitle:          'Per-agent breakdown',
+  colAgent:             'Agent',
+  colTickets:           'Tickets',                       // also used in the per-customer table
+  colUniqueCustomers:   'Unique Customers',
+  colTotalHours:        'Total Hours',                   // also used in the per-customer table
+  colAvgTime:           'Avg Time / Ticket',
+
+  // ── Per-customer breakdown table ───────────────────────────────────────────
+  customersTitle:       'Per-customer breakdown',
+  colCustomer:          'Customer',
+  colLatestTicket:      'Latest Ticket',
+  colAgentsInvolved:    'Agents Involved',
+  colRating:            'Competency / Training Rating',
+  newer:                'Newer',                         // page buttons (when tickets have dates)
+  older:                'Older',
+  prev:                 'Prev',                          // page buttons (when they don't)
+  next:                 'Next',
+
+  // ── Settings panel ─────────────────────────────────────────────────────────
+  settingsTitle:        'Settings',
+  appearance:           'Appearance',
+  darkMode:             '🌙 Dark mode',
+  lightMode:            '☀️ Light mode',
+  syncedFolder:         'Synced folder (automatic)',
+  connectFolder:        'Connect synced folder…',
+  reconnectFolder:      'Reconnect folder…',
+  refreshNow:           'Refresh now',
+  disconnect:           'Disconnect',
+  checkForChanges:      'Check for changes',
+  uploadManually:       'Or upload manually',
+  removeUploads:        'Remove uploaded files',
+  complaintTypes:       'Complaint types',
+  suggestedCombos:      'Suggested combinations',
+  combinedTypes:        'Combined types',
+  combineManually:      'Combine manually',
+  dismiss:              'Dismiss',
+  ungroup:              'Ungroup',
+  dataFilters:          'Data filters',
+  excludeTest:          'Leave out tickets labelled “test”',
+  dataPreview:          'Data preview (first 50 rows)',
+  metricsLog:           'Metrics log over time',
+  logSnapshot:          'Log this snapshot',
+  downloadLog:          'Download log as CSV',
+  clearLog:             'Clear log',
+  importLog:            'Import log CSV…',
+  autoSnapshot:         'Log a snapshot automatically at',
+  colLoggedAt:          'Logged At',                     // snapshot log table
+  colType:              'Type',
+  colCustomers:         'Customers',
+  colAgents:            'Agents',
+  colHours:             'Hours',
+  tagAuto:              'Auto',
+  tagManual:            'Manual',
+  tagImported:          'Imported',
+};
+/* ═════════════════════════════ end of editable labels ═════════════════════════ */
+const L = LABELS;
+
 /* ======================================================================
    App state — declared first so nothing below can touch it before it exists.
    Each data source keeps its own raw, untouched rows; the combined, filtered
@@ -277,6 +385,13 @@ let rows = [];          // combined view after filtering + de-duplication
 const durSec = new WeakMap(); // row -> seconds, kept off the row objects themselves
 
 const $ = id => document.getElementById(id);
+
+// fixed page text comes from LABELS too: elements marked data-label="name" get LABELS.name
+(function applyLabels(){
+  document.title = L.pageTitle;
+  $('pageHeading').textContent = (L.pageIcon ? L.pageIcon + ' ' : '') + L.pageTitle;
+  document.querySelectorAll('[data-label]').forEach(el => { if (L[el.dataset.label] !== undefined) el.textContent = L[el.dataset.label]; });
+})();
 
 /* ---------- HTML escaping (every value from a CSV goes through this) ---------- */
 function esc(s){
@@ -476,7 +591,7 @@ function lineChartSVG(labels, seriesList, opts){
   const x = i => n <= 1 || (times && !tSpan) ? padL + plotW/2 : times ? padL + ((times[i] - t0) / tSpan) * plotW : padL + (i/(n-1)) * plotW;
   const y = (v, s) => padT + plotH - (v / (s.axis === 'right' ? maxR : maxL)) * plotH;
   const axisTitle = (list, fallback) => list.length === 1 ? { text: list[0].axisTitle || list[0].title, color: list[0].color } : { text: fallback, color: 'var(--sub)' };
-  const lt = leftS.length ? axisTitle(leftS, 'Count') : null, rt = hasRight ? axisTitle(rightS, 'Hours') : null;
+  const lt = leftS.length ? axisTitle(leftS, L.countAxis) : null, rt = hasRight ? axisTitle(rightS, L.hoursAxis) : null;
   const rUnit = hasRight ? (rightS[0].unit || '') : '';
 
   let svg = `<svg viewBox="0 0 ${width} ${height}" width="100%" xmlns="http://www.w3.org/2000/svg" role="img">`;
@@ -525,7 +640,7 @@ function isCurrentlyDark(theme){ return theme === 'dark' || (!theme && !!(darkQu
 function applyTheme(theme){
   if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
   else document.documentElement.removeAttribute('data-theme');
-  $('themeToggle').textContent = isCurrentlyDark(theme) ? '☀️ Light mode' : '🌙 Dark mode';
+  $('themeToggle').textContent = isCurrentlyDark(theme) ? L.lightMode : L.darkMode;
 }
 function toggleTheme(){
   const next = isCurrentlyDark(getSavedTheme()) ? 'light' : 'dark';
@@ -1240,13 +1355,13 @@ function renderComplaintPanel(ix){
   // suggestions
   const sugg = complaintSuggestions(ix);
   if (sugg.length){
-    html += '<div class="cgBox"><h3>Suggested combinations</h3>';
+    html += `<div class="cgBox"><h3>${esc(L.suggestedCombos)}</h3>`;
     sugg.slice(0, 12).forEach(c => {
       const ids = c.map(u => u.id).join(',');
       const what = c.map(u => `“${esc(u.label)}” ${cnt(u.count)}`).join(' + ');
       html += `<div class="cgSuggest"><span class="cgWhat">${what}</span>
         <button class="btnPrimary btnSmall" data-cg-combine="${esc(ids)}" data-cg-name="${esc(c[0].label)}">Combine as “${esc(c[0].label)}”</button>
-        <button class="btnGhost btnSmall" data-cg-dismiss="${esc(clusterSig(c, ix))}">Dismiss</button></div>`;
+        <button class="btnGhost btnSmall" data-cg-dismiss="${esc(clusterSig(c, ix))}">${esc(L.dismiss)}</button></div>`;
     });
     if (sugg.length > 12) html += `<p class="sub" style="margin:6px 0 0;font-size:.78rem;">${sugg.length - 12} more — they’ll appear as you work through these.</p>`;
     html += '</div>';
@@ -1255,7 +1370,7 @@ function renderComplaintPanel(ix){
   // existing groups
   const liveGroups = ix.groups.map((g, gi) => ({ g, gi, present: g.members.filter(k => ix.keys.has(k)) }));
   if (ix.groups.length){
-    html += '<div class="cgBox"><h3>Combined types</h3>';
+    html += `<div class="cgBox"><h3>${esc(L.combinedTypes)}</h3>`;
     liveGroups.forEach(({ g, gi, present }) => {
       const total = present.reduce((n, k) => n + ix.keys.get(k).count, 0);
       const chips = g.members.map(k => {
@@ -1263,7 +1378,7 @@ function renderComplaintPanel(ix){
         const label = e ? e.label : k;
         return `<span class="chip" title="${e ? esc([...e.spellings.keys()].join(' / ')) : 'Not in the current data'}">${esc(label)}${e ? ' ' + cnt(e.count) : ' <span class="cgCount">0</span>'}<button data-cg-remove="${gi}|${esc(k)}" aria-label="Remove ${esc(label)} from this group">×</button></span>`;
       }).join('');
-      html += `<div class="cgGroup"><div class="cgGroupHead"><input class="cgInput" data-cg-rename="${gi}" value="${esc(g.name)}" aria-label="Combined type name">${cnt(total)}<button class="btnGhost btnSmall" data-cg-ungroup="${gi}">Ungroup</button></div>${chips}</div>`;
+      html += `<div class="cgGroup"><div class="cgGroupHead"><input class="cgInput" data-cg-rename="${gi}" value="${esc(g.name)}" aria-label="Combined type name">${cnt(total)}<button class="btnGhost btnSmall" data-cg-ungroup="${gi}">${esc(L.ungroup)}</button></div>${chips}</div>`;
     });
     html += '</div>';
   }
@@ -1276,7 +1391,7 @@ function renderComplaintPanel(ix){
   const valid = new Set(items.map(i => i.id));
   cgSelected = new Set([...cgSelected].filter(id => valid.has(id)));
 
-  html += '<div class="cgBox"><h3>Combine manually</h3><div class="cgList">';
+  html += `<div class="cgBox"><h3>${esc(L.combineManually)}</h3><div class="cgList">`;
   items.forEach(it => {
     const variants = it.variants.length > 1 ? `<div class="cgVariants">${esc(it.variants.slice(0, 4).join(' / '))}${it.variants.length > 4 ? ' …' : ''}</div>` : '';
     html += `<label class="cgItem"><input type="checkbox" data-cg-pick="${esc(it.id)}"${cgSelected.has(it.id) ? ' checked' : ''}><span class="cgName">${it.isGroup ? '<span class="tag auto" style="margin-right:6px;">combined</span>' : ''}${esc(it.label)}${variants}</span>${cnt(it.count)}</label>`;
@@ -1414,7 +1529,7 @@ function renderCustomerPage(){
   const startIdx = custPage * CUST_PAGE_SIZE;
   const slice = custList.slice(startIdx, startIdx + CUST_PAGE_SIZE);
 
-  let html = '<div class="tableWrap"><table><thead><tr><th>Customer</th><th>Latest Ticket</th><th>Tickets</th><th>Agents Involved</th><th>Total Hours</th><th>Competency / Training Rating</th></tr></thead><tbody>';
+  let html = `<div class="tableWrap"><table><thead><tr><th>${esc(L.colCustomer)}</th><th>${esc(L.colLatestTicket)}</th><th>${esc(L.colTickets)}</th><th>${esc(L.colAgentsInvolved)}</th><th>${esc(L.colTotalHours)}</th><th>${esc(L.colRating)}</th></tr></thead><tbody>`;
   slice.forEach(([customer, s]) => {
     const who = s.agents.size ? ` (${esc([...s.agents].join(', '))})` : '';
     let dateCell = '<td class="ratingNone">—</td>';
@@ -1428,7 +1543,7 @@ function renderCustomerPage(){
   html += '</tbody></table></div>';
 
   if (pages > 1){
-    const [newer, older] = custHasDates ? ['Newer', 'Older'] : ['Prev', 'Next'];
+    const [newer, older] = (custHasDates ? [L.newer, L.older] : [L.prev, L.next]).map(esc);
     const atStart = custPage === 0, atEnd = custPage === pages - 1;
     html += `<div class="pager" role="navigation" aria-label="Customer pages">
       <button data-cust-page="first" ${atStart ? 'disabled' : ''} aria-label="First page">«</button>
@@ -1641,15 +1756,15 @@ function renderKpis(){
       <button data-kpiday="prev" ${i <= 0 ? 'disabled' : ''} aria-label="Previous day with tickets">‹</button>
       <span class="dayName">${esc(dayLabel(kpiDay))}</span>
       <button data-kpiday="next" ${i >= kpi.dayKeys.length - 1 ? 'disabled' : ''} aria-label="Next day with tickets">›</button>
-      ${kpiDay !== today && kpi.days.has(today) ? '<button data-kpiday="today" class="btnSmall">Today</button>' : ''}
-      ${kpiDay !== kpi.dayKeys[kpi.dayKeys.length - 1] && !kpi.days.has(today) ? '<button data-kpiday="latest" class="btnSmall">Latest</button>' : ''}
+      ${kpiDay !== today && kpi.days.has(today) ? `<button data-kpiday="today" class="btnSmall">${esc(L.today)}</button>` : ''}
+      ${kpiDay !== kpi.dayKeys[kpi.dayKeys.length - 1] && !kpi.days.has(today) ? `<button data-kpiday="latest" class="btnSmall">${esc(L.latest)}</button>` : ''}
     </div>`;
   } else {
     head += `<div class="dayNav"><span class="dayName sub">${esc(fmtRange())}</span></div>`;
   }
   head += `<div class="seg" role="group" aria-label="Summary totals">
-      <button data-kpimode="daily" aria-pressed="${mode === 'daily'}"${canDaily ? '' : ' disabled title="Needs a ticket date column (e.g. Date, Finished, Closed)"'}>Daily</button>
-      <button data-kpimode="cumulative" aria-pressed="${mode === 'cumulative'}">Cumulative</button>
+      <button data-kpimode="daily" aria-pressed="${mode === 'daily'}"${canDaily ? '' : ' disabled title="Needs a ticket date column (e.g. Date, Finished, Closed)"'}>${esc(L.daily)}</button>
+      <button data-kpimode="cumulative" aria-pressed="${mode === 'cumulative'}">${esc(L.cumulative)}</button>
     </div></div>`;
 
   const d = mode === 'daily' ? kpi.days.get(kpiDay) : null;
@@ -1657,17 +1772,17 @@ function renderKpis(){
   const c = (label, value, subTxt) => `<div class="card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div>${subTxt ? sub(subTxt) : ''}</div>`;
   let cards = '<div class="grid">';
   if (d){
-    cards += c('Tickets', d.tickets.toLocaleString(), `of ${kpi.total.tickets.toLocaleString()} total`);
-    if (kpi.has.customer) cards += c('Customers Helped', d.customers.size.toLocaleString(), `of ${kpi.total.customers.toLocaleString()} total`);
-    if (kpi.has.duration) cards += c('Hours', secondsToHours(d.sec), `of ${secondsToHours(kpi.total.sec)} total`);
+    cards += c(L.dayTickets, d.tickets.toLocaleString(), `of ${kpi.total.tickets.toLocaleString()} total`);
+    if (kpi.has.customer) cards += c(L.dayCustomers, d.customers.size.toLocaleString(), `of ${kpi.total.customers.toLocaleString()} total`);
+    if (kpi.has.duration) cards += c(L.dayHours, secondsToHours(d.sec), `of ${secondsToHours(kpi.total.sec)} total`);
   } else {
-    cards += c('Total Tickets', kpi.total.tickets.toLocaleString(), kpi.undated && canDaily ? `incl. ${kpi.undated.toLocaleString()} without a date` : '');
-    if (kpi.has.customer) cards += c('Total Customers Helped', kpi.total.customers.toLocaleString());
-    if (kpi.has.duration) cards += c('Total Hours', secondsToHours(kpi.total.sec));
+    cards += c(L.totalTickets, kpi.total.tickets.toLocaleString(), kpi.undated && canDaily ? `incl. ${kpi.undated.toLocaleString()} without a date` : '');
+    if (kpi.has.customer) cards += c(L.totalCustomers, kpi.total.customers.toLocaleString());
+    if (kpi.has.duration) cards += c(L.totalHours, secondsToHours(kpi.total.sec));
   }
   // these two always cover everything loaded
-  if (kpi.has.agent) cards += c('Unique Agents', kpi.agents.toLocaleString(), mode === 'daily' ? 'all days' : '');
-  if (kpi.has.duration) cards += c('Avg Time / Ticket', secondsToHms(kpi.avgSec), mode === 'daily' ? 'all days' : '');
+  if (kpi.has.agent) cards += c(L.uniqueAgents, kpi.agents.toLocaleString(), mode === 'daily' ? 'all days' : '');
+  if (kpi.has.duration) cards += c(L.avgTime, secondsToHms(kpi.avgSec), mode === 'daily' ? 'all days' : '');
   cards += '</div>';
   area.innerHTML = head + cards;
 }
@@ -1741,8 +1856,8 @@ function render(){
   // per-agent and per-customer tables go below the Metrics over time graph
   let tables = '';
   if (has.agent){
-    tables += '<div class="section"><h2>Per-agent breakdown</h2><div class="tableWrap"><table><thead><tr>';
-    tables += '<th>Agent</th><th>Tickets</th><th>Unique Customers</th><th>Total Hours</th><th>Avg Time / Ticket</th></tr></thead><tbody>';
+    tables += `<div class="section"><h2>${esc(L.agentsTitle)}</h2><div class="tableWrap"><table><thead><tr>`;
+    tables += `<th>${esc(L.colAgent)}</th><th>${esc(L.colTickets)}</th><th>${esc(L.colUniqueCustomers)}</th><th>${esc(L.colTotalHours)}</th><th>${esc(L.colAvgTime)}</th></tr></thead><tbody>`;
     const agentStats = new Map();
     rows.forEach(r => {
       const rc = rowCols(r);
@@ -1790,7 +1905,7 @@ function render(){
         ? ((b[1].last ? b[1].last.ms : -Infinity) - (a[1].last ? a[1].last.ms : -Infinity)) || b[1].tickets - a[1].tickets
         : b[1].agents.size - a[1].agents.size || b[1].sec - a[1].sec);
 
-    tables += '<div class="section"><h2>Per-customer breakdown</h2>';
+    tables += `<div class="section"><h2>${esc(L.customersTitle)}</h2>`;
     tables += `<p class="sub" style="margin-bottom:8px;">${custHasDates
       ? 'Most recent ticket first, 10 customers per page \u2014 use <strong>Older</strong> to page back to earlier tickets.'
       : 'Sorted by number of different agents involved, so shared/simultaneous cases surface first. 10 customers per page.'}</p>`;
@@ -1814,7 +1929,7 @@ function render(){
   // after filtering, every row is "Finished", so a status chart would always be a single bar — only show it if there's variety
   if (has.status && Object.keys(statuses).length > 1){
     const entries = Object.entries(statuses).sort((a,b)=>b[1]-a[1]).map(([label,value])=>({label,value}));
-    charts.push(chartCard('Status breakdown', hBarChartSVG(entries, {width:460, leftLabelWidth:120})));
+    charts.push(chartCard(L.statusChart, hBarChartSVG(entries, {width:460, leftLabelWidth:120})));
   }
   // Top complaints: one chart with a Category / Type switch
   complaintViews = { category: null, type: null };
@@ -1860,9 +1975,9 @@ function render(){
     complaintViews.category = hBarChartSVG(entries, {width:460, leftLabelWidth:140}) + (notes.length ? `<div class="chartNote">${notes.join(' ')}</div>` : '');
   }
   if (complaintViews.type || complaintViews.category){
-    charts.push(`<div class="chartCard" id="complaintCard"><div class="chartHead"><h2>Top complaints</h2><div class="seg" role="group" aria-label="Show complaints by">
-        <button data-cview="category"${complaintViews.category ? '' : ' disabled title="No category column in the loaded files"'}>Category</button>
-        <button data-cview="type"${complaintViews.type ? '' : ' disabled title="No complaint type column in the loaded files"'}>Type</button>
+    charts.push(`<div class="chartCard" id="complaintCard"><div class="chartHead"><h2>${esc(L.complaintsChart)}</h2><div class="seg" role="group" aria-label="Show complaints by">
+        <button data-cview="category"${complaintViews.category ? '' : ' disabled title="No category column in the loaded files"'}>${esc(L.category)}</button>
+        <button data-cview="type"${complaintViews.type ? '' : ' disabled title="No complaint type column in the loaded files"'}>${esc(L.type)}</button>
       </div></div><div class="chartWrap" id="complaintBody"></div></div>`);
   }
   if (has.customer){
@@ -1876,8 +1991,8 @@ function render(){
     const slices = sorted.slice(0,5).map(([label,value])=>({label,value}));
     // remaining customers become one grey slice, so percentages are a share of ALL tickets
     const otherCount = sorted.slice(5).reduce((n, [,v]) => n + v, 0);
-    if (otherCount) slices.push({ label: `All other customers (${sorted.length - 5})`, value: otherCount, other: true });
-    charts.push(chartCard('Top 5 customers by ticket count', pieChartHTML(slices)));
+    if (otherCount) slices.push({ label: `${L.otherCustomers} (${sorted.length - 5})`, value: otherCount, other: true });
+    charts.push(chartCard(L.topCustomersChart, pieChartHTML(slices)));
   }
   if (charts.length) html += `<div class="section chartRow">${charts.join('')}</div>`;
 
@@ -2025,11 +2140,11 @@ function renderLog(){
     renderTrend(log);
     return;
   }
-  let html = '<div class="tableWrap"><table><thead><tr><th>Logged At</th><th>Type</th><th>Tickets</th><th>Customers</th><th>Agents</th><th>Hours</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>';
+  let html = `<div class="tableWrap"><table><thead><tr><th>${esc(L.colLoggedAt)}</th><th>${esc(L.colType)}</th><th>${esc(L.colTickets)}</th><th>${esc(L.colCustomers)}</th><th>${esc(L.colAgents)}</th><th>${esc(L.colHours)}</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>`;
   const show = v => v === null || v === undefined || v === '' ? '\u2014' : esc(v);
   log.slice().reverse().forEach(e => {
-    const type = (e.type === 'auto' ? '<span class="tag auto">Auto</span>' : '<span class="tag">Manual</span>')
-      + (e.source ? ` <span class="tag" title="Imported from ${esc(e.source)}">Imported</span>` : '');
+    const type = (e.type === 'auto' ? `<span class="tag auto">${esc(L.tagAuto)}</span>` : `<span class="tag">${esc(L.tagManual)}</span>`)
+      + (e.source ? ` <span class="tag" title="Imported from ${esc(e.source)}">${esc(L.tagImported)}</span>` : '');
     html += `<tr><td>${esc(new Date(e.timestamp).toLocaleString())}</td><td>${type}</td><td>${show(e.tickets)}</td><td>${show(e.customers)}</td><td>${show(e.agents)}</td><td>${show(e.hours)}</td><td><button class="rowDel" data-del-snap="${esc(snapKey(e))}" title="Delete this snapshot" aria-label="Delete this snapshot">\u00d7</button></td></tr>`;
   });
   html += '</tbody></table></div>';
@@ -2040,10 +2155,10 @@ function renderLog(){
 
 // the snapshot graph lives on the main page; it appears once there's at least one snapshot
 const TREND_SERIES = [
-  { key: 'tickets',   title: 'Tickets',      color: '#4f6df5' },
-  { key: 'customers', title: 'Customers',    color: '#f59e0b' },
-  { key: 'agents',    title: 'Agents',       color: '#a855f7' },
-  { key: 'hours',     title: 'Hours worked', axisTitle: 'Hours', color: '#34d399', unit: ' h', axis: 'right' }
+  { key: 'tickets',   title: L.lineTickets,   color: '#4f6df5' },
+  { key: 'customers', title: L.lineCustomers, color: '#f59e0b' },
+  { key: 'agents',    title: L.lineAgents,    color: '#a855f7' },
+  { key: 'hours',     title: L.lineHours,     axisTitle: L.hoursAxis, color: '#34d399', unit: ' h', axis: 'right' }
 ];
 const TREND_KEY = 'ticketDashboardTrendSeries';
 function getTrendSeries(){
