@@ -1618,19 +1618,19 @@ function rebuild(){
   const raw = [];
   for (const r of sources.folder.rows) raw.push(r);
   for (const r of sources.manual.rows) raw.push(r);
+  assignTicketKeys(raw);
   inProgress = collectInProgress(raw);
 
   // Work logs (Event column: ticket_started, ticket_finished, ticket_edited, competency_rated, …)
   // record a ticket's *current* customer, complaint, category and rating on every row. A rating or
   // edit made after the ticket was finished only appears on later rows, so each finished ticket
   // takes those fields from its latest row; a ticket whose latest event is a deletion is dropped.
-  const latestEvent = new Map(); // agent||ticketId → { row, ms, order }
+  const latestEvent = new Map(); // real-ticket key → { row, ms, order }
   raw.forEach((r, order) => {
     const rc = rowCols(r);
     if (!rc.status || !rc.ticketId || !isLogEvent(r[rc.status])) return;
-    const id = String(r[rc.ticketId] ?? '').trim();
-    if (!id) return;
-    const key = (rc.agent ? String(r[rc.agent] ?? '').trim() + '||' : '') + id;
+    const key = ticketKey(r);
+    if (!key) return;
     const ms = rc.date ? parseDate(val(r, rc.date)) : null;
     const prev = latestEvent.get(key);
     const later = !prev || (ms !== null && prev.ms !== null ? (ms > prev.ms || (ms === prev.ms && order > prev.order)) : order > prev.order);
@@ -1644,13 +1644,13 @@ function rebuild(){
     const rc = rowCols(r);
     if (rc.status && !isFinished(r[rc.status])) continue; // no status column → keep, can't judge
     if (!rc.status || !isLogEvent(r[rc.status])){ finished.push(r); continue; }
-    const key = (rc.agent ? String(r[rc.agent] ?? '').trim() + '||' : '') + String(r[rc.ticketId] ?? '').trim();
-    const last = latestEvent.get(key);
+    const last = latestEvent.get(ticketKey(r));
     if (!last || last.row === r){ finished.push(r); continue; }
     const lc = rowCols(last.row);
     if (/delet/i.test(String(last.row[lc.status] ?? ''))){ deletedAfter++; continue; }
     // copy the finished row (its time and duration stay), then bring in the latest values
     const merged = Object.assign({}, r);
+    ticketKeyMemo.set(merged, ticketKey(r)); // the copy is still the same ticket
     let changed = false;
     for (const f of ['customer', 'complaint', 'category', 'rating']){
       if (!lc[f]) continue;
@@ -1673,10 +1673,8 @@ function rebuild(){
   // collapse repeated event rows for the same ticket + agent
   const seen = new Set();
   rows = kept.filter(r => {
-    const rc = rowCols(r);
-    const id = rc.ticketId ? String(r[rc.ticketId] ?? '').trim() : '';
-    if (!id) return true;
-    const key = (rc.agent ? String(r[rc.agent] ?? '').trim() + '||' : '') + id;
+    const key = ticketKey(r);
+    if (!key) return true;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -1720,6 +1718,58 @@ function rebuild(){
   render();
 }
 
+/* ---------- ticket identity ----------
+   The tracker restarts ticket numbers (ticket "1" on Monday and ticket "1" on Tuesday
+   are different tickets), so agent + ticket number isn't enough to tell tickets apart.
+   In work logs, every ticket_created starts a new ticket; later events for that agent and
+   number belong to the most recent one (a ticket_started after a finish also starts a new
+   one, for logs from trackers that don't write ticket_created). Exports are matched to
+   the same ticket by their Started At time (within 2 minutes of its creation). */
+const ticketKeyMemo = new WeakMap();
+function baseTicketKey(r){
+  const rc = rowCols(r);
+  const id = rc.ticketId ? String(r[rc.ticketId] ?? '').trim() : '';
+  if (!id) return null;
+  return (rc.agent ? String(r[rc.agent] ?? '').trim() : '') + '||' + id;
+}
+function ticketKey(r){ return ticketKeyMemo.get(r) ?? baseTicketKey(r); }
+function assignTicketKeys(raw){
+  const groups = new Map(); // agent||number → that number's log events, in time order
+  raw.forEach((r, order) => {
+    const base = baseTicketKey(r);
+    if (!base) return;
+    const rc = rowCols(r);
+    if (!rc.status || !isLogEvent(r[rc.status])) return;
+    if (!groups.has(base)) groups.set(base, []);
+    groups.get(base).push({ r, order, ms: rc.date ? parseDate(val(r, rc.date)) : null, ev: String(r[rc.status]).trim().toLowerCase() });
+  });
+  const starts = new Map(); // agent||number → start times of each real ticket
+  for (const [base, evs] of groups){
+    evs.sort((a, b) => (a.ms !== null && b.ms !== null && a.ms !== b.ms) ? a.ms - b.ms : a.order - b.order);
+    let cur = null;
+    const list = [];
+    for (const g of evs){
+      if (!cur || g.ev === 'ticket_created' || (cur.closed && g.ev === 'ticket_started')){
+        cur = { start: g.ms !== null ? g.ms : 'row' + g.order, closed: false };
+        list.push(cur.start);
+      }
+      ticketKeyMemo.set(g.r, base + '#' + cur.start);
+      if (g.ev === 'ticket_finished' || g.ev === 'ticket_deleted') cur.closed = true;
+    }
+    starts.set(base, list);
+  }
+  // export rows: attach to the logged ticket that started at (about) the same moment
+  raw.forEach(r => {
+    const base = baseTicketKey(r);
+    if (!base || ticketKeyMemo.has(r)) return;
+    const rc = rowCols(r);
+    const sm = rc.started ? parseDate(val(r, rc.started)) : null;
+    if (sm === null){ ticketKeyMemo.set(r, base); return; }
+    const near = (starts.get(base) || []).find(t => typeof t === 'number' && Math.abs(t - sm) <= 120000);
+    ticketKeyMemo.set(r, base + '#' + (near !== undefined ? near : sm));
+  });
+}
+
 /* ---------- In Progress: tickets that are running or paused right now ----------
    From exports: the Status column (Running / Paused / Not started / Finished).
    From work logs: each ticket's latest status event (created/started/resumed → running,
@@ -1738,7 +1788,7 @@ const EXPORT_STATE = memo(v => {
 // the tracker logs a new ticket as ticket_created and starts its timer at once, so a created ticket is running
 const EVENT_STATE = { ticket_created: 'running', ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_finished: 'finished', ticket_deleted: 'deleted' };
 function collectInProgress(raw){
-  const t = new Map(); // agent||id → ticket
+  const t = new Map(); // real-ticket key → ticket
   let known = false;   // any status information at all?
   raw.forEach((r, order) => {
     const rc = rowCols(r);
@@ -1746,7 +1796,7 @@ function collectInProgress(raw){
     const id = String(r[rc.ticketId] ?? '').trim();
     if (!id) return;
     const agent = rc.agent ? String(r[rc.agent] ?? '').trim() : '';
-    const key = agent + '||' + id;
+    const key = ticketKey(r);
     const v = String(r[rc.status] ?? '').trim();
     let e = t.get(key);
     if (!e){ e = { key, id, agent, state: null, stateMs: -Infinity, stateOrder: -1, finished: false, deleted: false, startMs: null, row: r, rowMs: -Infinity, fromLog: false }; t.set(key, e); }

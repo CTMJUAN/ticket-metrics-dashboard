@@ -16,6 +16,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 3.5 | Fix: ticket numbers reused by the tracker on different days are now separate tickets (each ticket_created starts a new one), so Daily shows today and In Progress counts today's paused/running tickets |
 | 3.4 | Top 5 Complaints: chart shows the top 5 (category or type), with Show all to expand a full ranked list with counts and shares |
 | 3.3 | Fix: newly created tickets (work-log event ticket_created) now appear in In Progress right away, and move to the totals once finished |
 | 3.2 | In Progress counter next to Top Complaints: running + paused tickets from exports and work logs, longest-open first |
