@@ -128,6 +128,7 @@ table.cAll td{padding:5px 6px;white-space:normal;vertical-align:top;}
 .trendHead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
 .trendHead h2{margin:0;}
 .trendLink{color:var(--accent);font-size:.82rem;}
+.trendFoot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-top:6px;}
 .seriesPicker{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
 .seriesChip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;padding:4px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--sub);}
 .seriesChip .dot{opacity:.35;}
@@ -175,7 +176,7 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 <div id="trendSection" class="section" style="display:none;">
   <div class="trendHead">
     <h2 data-label="trendTitle">Metrics over time</h2>
-    <a href="#" data-open-snapshots class="trendLink" data-label="snapshotSettingsLink">Snapshot settings</a>
+    <div class="seg" id="trendFrame" role="group" aria-label="Time frame"></div>
   </div>
   <div class="seriesPicker" id="trendSeries" role="group" aria-label="Lines shown on the graph"></div>
   <div id="trendChart"></div>
@@ -314,7 +315,9 @@ const LABELS = {
   dayCustomers:         'Customers Helped',              // Daily view
   dayHours:             'Hours',                         // Daily view
   uniqueAgents:         'Unique Agents',
+  dayAgents:            'Agents',                        // Daily view
   avgTime:              'Avg Time / Ticket',
+  dayAvgTime:           'Avg Time / Ticket',             // Daily view
 
   // ── Charts ─────────────────────────────────────────────────────────────────
   statusChart:          'Status Breakdown',
@@ -328,6 +331,11 @@ const LABELS = {
 
   // ── Metrics over time (snapshot graph) ─────────────────────────────────────
   trendTitle:           'Metrics over time',
+  frameDaily:           'Daily',                         // time-frame switch on the graph
+  frameWeekly:          'Weekly',
+  frameMonthly:         'Monthly',
+  frameCumulative:      'Cumulative',
+  frameSnapshots:       'Snapshots',
   snapshotSettingsLink: 'Snapshot settings',
   lineTickets:          'Tickets',
   lineCustomers:        'Customers',
@@ -652,10 +660,20 @@ function lineChartSVG(labels, seriesList, opts){
     });
     return svg + `</svg>`;
   }
-  const idxs = n <= 1 ? [0] : [...new Set([0, Math.floor((n-1)/2), n-1])];
+  let idxs;
+  if (n <= 1) idxs = [0];
+  else {
+    // as many labels as fit across, evenly spaced, always including the last period
+    const longest = labels.reduce((m, l) => Math.max(m, String(l).length), 1);
+    const fit = Math.max(2, Math.floor(plotW / (longest * 6.4 + 14)));
+    const step = Math.max(1, Math.ceil((n - 1) / (fit - 1)));
+    idxs = [];
+    for (let i = 0; i < n; i += step) idxs.push(i);
+    if (idxs[idxs.length - 1] !== n - 1){ if (n - 1 - idxs[idxs.length - 1] < step / 2) idxs.pop(); idxs.push(n - 1); }
+  }
   idxs.forEach((i, k) => {
     if (labels[i] === undefined) return;
-    const anchor = n <= 1 ? 'middle' : (k === 0 ? 'start' : (i === n-1 ? 'end' : 'middle'));
+    const anchor = n <= 1 ? 'middle' : (i === 0 ? 'start' : (i === n-1 ? 'end' : 'middle'));
     svg += `<text class="sub-text" x="${x(i)}" y="${height-6}" text-anchor="${anchor}">${esc(labels[i])}</text>`;
   });
   return svg + `</svg>`;
@@ -1698,7 +1716,7 @@ function rebuild(){
   $('logBtn').disabled = !rows.length;
 
   const output = $('output');
-  if (!rows.length) $('tables').innerHTML = '';
+  if (!rows.length){ $('tables').innerHTML = ''; kpi = null; renderTrend(); }
   if (typeof checkAutoSnapshot === 'function' && !autoBusy) setTimeout(checkAutoSnapshot, 0);
   if (!rows.length) renderComplaintPanel(null);
   if (!raw.length){
@@ -1959,9 +1977,14 @@ function renderKpis(){
     if (kpi.has.customer) cards += c(L.totalCustomers, kpi.total.customers.toLocaleString());
     if (kpi.has.duration) cards += c(L.totalHours, secondsToHours(kpi.total.sec));
   }
-  // these two always cover everything loaded
-  if (kpi.has.agent) cards += c(L.uniqueAgents, kpi.agents.toLocaleString(), mode === 'daily' ? 'all days' : '');
-  if (kpi.has.duration) cards += c(L.avgTime, secondsToHms(kpi.avgSec), mode === 'daily' ? 'all days' : '');
+  if (d){
+    // the day's own agents and average, with the overall figure underneath for comparison
+    if (kpi.has.agent) cards += c(L.dayAgents, d.agents.size.toLocaleString(), `of ${kpi.agents.toLocaleString()} total`);
+    if (kpi.has.duration) cards += c(L.dayAvgTime, secondsToHms(d.sec / d.tickets), `overall ${secondsToHms(kpi.avgSec)}`);
+  } else {
+    if (kpi.has.agent) cards += c(L.uniqueAgents, kpi.agents.toLocaleString());
+    if (kpi.has.duration) cards += c(L.avgTime, secondsToHms(kpi.avgSec));
+  }
   cards += '</div>';
   area.innerHTML = head + cards;
 }
@@ -2027,7 +2050,7 @@ function render(){
   const has = anyColsPresent(rows);
   const agents = new Set(), customers = new Set(), statuses = {}, complaints = {};
   let totalSec = 0;
-  const days = new Map(); // "2026-10-09" → { tickets, customers:Set, sec }
+  const days = new Map(); // "2026-10-09" → { tickets, customers:Set, agents:Set, sec }
   let firstMs = Infinity, lastMs = -Infinity, undated = 0;
   rows.forEach(r => {
     const rc = rowCols(r);
@@ -2038,8 +2061,8 @@ function render(){
     if (ms !== null){
       const k = dateKey(new Date(ms));
       let d = days.get(k);
-      if (!d){ d = { tickets: 0, customers: new Set(), sec: 0 }; days.set(k, d); }
-      d.tickets++; if (cu) d.customers.add(cu); d.sec += dur(r);
+      if (!d){ d = { tickets: 0, customers: new Set(), agents: new Set(), sec: 0 }; days.set(k, d); }
+      d.tickets++; if (cu) d.customers.add(cu); if (a) d.agents.add(a); d.sec += dur(r);
       if (ms < firstMs) firstMs = ms; if (ms > lastMs) lastMs = ms;
     } else undated++;
     if (rc.status){
@@ -2208,6 +2231,7 @@ function render(){
 
   $('output').innerHTML = html;
   renderKpis();
+  renderTrend();
   $('tables').innerHTML = tables;
   showComplaintView();
   renderCustomerPage();
@@ -2363,7 +2387,7 @@ function renderLog(){
   renderTrend(log);
 }
 
-// the snapshot graph lives on the main page; it appears once there's at least one snapshot
+// Metrics over time: from the ticket data (daily / weekly / monthly / cumulative) or from logged snapshots
 const TREND_SERIES = [
   { key: 'tickets',   title: L.lineTickets,   color: '#4f6df5' },
   { key: 'customers', title: L.lineCustomers, color: '#f59e0b' },
@@ -2378,41 +2402,124 @@ function getTrendSeries(){
   } catch (e) {}
   return ['tickets', 'hours'];
 }
-function renderTrend(log){
+const TREND_FRAME_KEY = 'ticketDashboardTrendFrame';
+const TREND_FRAMES = ['daily', 'weekly', 'monthly', 'cumulative', 'snapshots'];
+function getTrendFrame(){
+  try { const f = localStorage.getItem(TREND_FRAME_KEY); if (TREND_FRAMES.includes(f)) return f; } catch (e) {}
+  return 'weekly';
+}
+// "2026-10-13" → Date at local midnight
+const dayDate = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const shortDate = dt => dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function weekStart(dt){ const x = new Date(dt); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; } // Monday
+
+// Turn the per-day ticket totals into the points for the chosen time frame.
+function trendPoints(frame){
+  if (!kpi || !kpi.dayKeys.length) return null;
+  const keys = kpi.dayKeys;
+  const totals = list => {
+    const cust = new Set(), ag = new Set(); let tickets = 0, sec = 0;
+    list.forEach(d => { tickets += d.tickets; sec += d.sec; d.customers.forEach(c => cust.add(c)); d.agents.forEach(a => ag.add(a)); });
+    return { tickets, customers: cust.size, agents: ag.size, hours: +(sec / 3600).toFixed(2) };
+  };
+  const now = new Date();
+  if (frame === 'daily'){
+    return { timeBased: true, pts: keys.map(k => ({ label: shortDate(dayDate(k)), ms: dayDate(k).getTime(), ...totals([kpi.days.get(k)]) })),
+             unit: 'day', partial: keys[keys.length - 1] === dateKey(now) };
+  }
+  if (frame === 'cumulative'){
+    // running totals: everything finished up to and including each day
+    const cust = new Set(), ag = new Set(); let tickets = 0, sec = 0;
+    return { timeBased: true, unit: 'cumulative', pts: keys.map(k => {
+      const d = kpi.days.get(k);
+      tickets += d.tickets; sec += d.sec; d.customers.forEach(c => cust.add(c)); d.agents.forEach(a => ag.add(a));
+      return { label: shortDate(dayDate(k)), ms: dayDate(k).getTime(), tickets, customers: cust.size, agents: ag.size, hours: +(sec / 3600).toFixed(2) };
+    }) };
+  }
+  // weekly (Mon–Sun) or monthly: every period from the first to the last, with empty ones as 0
+  const periodOf = frame === 'weekly' ? dt => weekStart(dt) : dt => new Date(dt.getFullYear(), dt.getMonth(), 1);
+  const next = frame === 'weekly' ? dt => { const x = new Date(dt); x.setDate(x.getDate() + 7); return x; } : dt => new Date(dt.getFullYear(), dt.getMonth() + 1, 1);
+  const label = frame === 'weekly' ? dt => `Wk of ${shortDate(dt)}` : dt => dt.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  const buckets = new Map();
+  keys.forEach(k => { const p = dateKey(periodOf(dayDate(k))); if (!buckets.has(p)) buckets.set(p, []); buckets.get(p).push(kpi.days.get(k)); });
+  const pts = [];
+  for (let p = periodOf(dayDate(keys[0])), last = periodOf(dayDate(keys[keys.length - 1])); p <= last; p = next(p)){
+    pts.push({ label: label(p), ms: p.getTime(), ...totals(buckets.get(dateKey(p)) || []) });
+  }
+  return { timeBased: false, pts, unit: frame === 'weekly' ? 'week' : 'month',
+           partial: dateKey(periodOf(now)) === dateKey(new Date(pts[pts.length - 1].ms)) };
+}
+
+function renderTrend(){
   const section = $('trendSection');
-  if (!log.length){ section.style.display = 'none'; $('trendChart').innerHTML = ''; return; }
+  const log = loadLog();
+  const hasData = !!(kpi && kpi.dayKeys.length);
+  if (!hasData && !log.length){ section.style.display = 'none'; $('trendChart').innerHTML = ''; return; }
   section.style.display = '';
+  let frame = getTrendFrame();
+  if (frame === 'snapshots' && !log.length && hasData) frame = 'weekly';
+  if (frame !== 'snapshots' && !hasData) frame = 'snapshots';
+  const fLabel = { daily: L.frameDaily, weekly: L.frameWeekly, monthly: L.frameMonthly, cumulative: L.frameCumulative, snapshots: L.frameSnapshots };
+  $('trendFrame').innerHTML = TREND_FRAMES.map(f => {
+    const off = f === 'snapshots' ? !log.length : !hasData;
+    const why = f === 'snapshots' ? 'No snapshots logged yet' : 'Needs ticket data with dates';
+    return `<button data-tframe="${f}" aria-pressed="${f === frame}"${off ? ` disabled title="${why}"` : ''}>${esc(fLabel[f])}</button>`;
+  }).join('');
   const chosen = getTrendSeries();
   $('trendSeries').innerHTML = TREND_SERIES.map(s =>
     `<button class="seriesChip" data-series="${s.key}" aria-pressed="${chosen.includes(s.key)}"><span class="dot" style="background:${s.color}"></span>${esc(s.title)}</button>`).join('');
-  const first = new Date(log[0].timestamp), last = new Date(log[log.length - 1].timestamp);
-  const span = log.length === 1
-    ? '1 snapshot so far — the lines fill in as more are logged.'
-    : `${log.length} snapshots, ${esc(first.toLocaleDateString())} – ${esc(last.toLocaleDateString())}.`;
+
+  // ---- what to plot ----
+  let labels, times, rowsOf, span, lastName;
+  if (frame === 'snapshots'){
+    labels = log.map(e => new Date(e.timestamp).toLocaleDateString());
+    times = log.map(e => Date.parse(e.timestamp));
+    rowsOf = log;
+    const first = new Date(log[0].timestamp), last = new Date(log[log.length - 1].timestamp);
+    span = (log.length === 1
+      ? '1 snapshot so far — the lines fill in as more are logged.'
+      : `${log.length} snapshots, ${esc(first.toLocaleDateString())} – ${esc(last.toLocaleDateString())}.`)
+      + ` <a href="#" data-open-snapshots class="trendLink">${esc(L.snapshotSettingsLink)}</a>`;
+    lastName = i => i === log.length - 1 ? 'latest' : `latest (${new Date(log[i].timestamp).toLocaleDateString()})`;
+  } else {
+    const tp = trendPoints(frame);
+    labels = tp.pts.map(p => p.label);
+    times = tp.timeBased ? tp.pts.map(p => p.ms) : null;
+    rowsOf = tp.pts;
+    const n = tp.pts.length;
+    const range = `${esc(shortDate(dayDate(kpi.dayKeys[0])))} – ${esc(shortDate(dayDate(kpi.dayKeys[kpi.dayKeys.length - 1])))}`;
+    span = frame === 'cumulative' ? `Running totals, ${range}.`
+         : `${n} ${tp.unit}${n === 1 ? '' : 's'}${frame === 'daily' ? ' with tickets' : ''}, ${range}.${tp.partial ? ` The last ${tp.unit} is so far only.` : ''}`;
+    lastName = i => frame === 'cumulative' ? 'total' : `${i === n - 1 && tp.partial ? 'this ' + tp.unit + ' so far' : labels[i]}`;
+  }
   if (!chosen.length){
-    $('trendChart').innerHTML = `<div class="chartWrap"><p class="empty" style="text-align:center;">Pick at least one line above to show.</p></div><div class="legend"><span style="margin-left:auto;">${span}</span></div>`;
+    $('trendChart').innerHTML = `<div class="chartWrap"><p class="empty" style="text-align:center;">Pick at least one line above to show.</p></div><div class="trendFoot"><span></span><span class="legend" style="margin:0;">${span}</span></div>`;
     return;
   }
   // draw at the real on-screen width so the text stays readable on a phone (scaling a wide drawing down shrinks it)
   const w = Math.max(300, Math.round($('trendChart').clientWidth - 34) || 1000);
-  const labels = log.map(e => new Date(e.timestamp).toLocaleDateString());
   const numOrNaN = v => (v === null || v === undefined || v === '') ? NaN : Number(v);
   const picked = TREND_SERIES.filter(s => chosen.includes(s.key));
   const onlyRight = picked.every(s => s.axis === 'right'); // hours alone → use the left scale
-  const series = picked.map(s => ({ ...s, axis: onlyRight ? 'left' : s.axis, values: log.map(e => numOrNaN(e[s.key])) }));
-  let html = `<div class="chartWrap">${lineChartSVG(labels, series, { width: w, height: w < 600 ? 210 : 250, times: log.map(e => Date.parse(e.timestamp)) })}</div>`;
+  const series = picked.map(s => ({ ...s, axis: onlyRight ? 'left' : s.axis, values: rowsOf.map(e => numOrNaN(e[s.key])) }));
+  let html = `<div class="chartWrap">${lineChartSVG(labels, series, { width: w, height: w < 600 ? 210 : 250, times })}</div>`;
   const fmtN = v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 });
-  // if the newest snapshot lacks a measure (e.g. an older imported log), show the last known value and its date
-  const lastKnown = key => { for (let i = log.length - 1; i >= 0; i--) if (isFinite(numOrNaN(log[i][key]))) return { v: log[i][key], i }; return null; };
+  // newest value of each line (or the last one it has, for older imported snapshots)
+  const lastKnown = key => { for (let i = rowsOf.length - 1; i >= 0; i--) if (isFinite(numOrNaN(rowsOf[i][key]))) return { v: rowsOf[i][key], i }; return null; };
   const twoScales = series.some(s => s.axis === 'right');
   html += '<div class="legend">' + series.map(s => {
     const lk = lastKnown(s.key);
-    const latestTxt = !lk ? 'no data' : `latest ${fmtN(lk.v)}${s.unit || ''}${lk.i < log.length - 1 ? ` (${new Date(log[lk.i].timestamp).toLocaleDateString()})` : ''}`;
-    return `<span><span class="dot" style="background:${s.color};"></span>${esc(s.title)}${twoScales ? (s.axis === 'right' ? ' (right scale)' : ' (left scale)') : ''} \u00b7 ${esc(latestTxt)}</span>`;
-  }).join('')
-    + `<span style="margin-left:auto;">${span}</span></div>`;
+    const latestTxt = !lk ? 'no data' : `${lastName(lk.i)} ${fmtN(lk.v)}${s.unit || ''}`;
+    return `<span><span class="dot" style="background:${s.color};"></span>${esc(s.title)}${twoScales ? (s.axis === 'right' ? ' (right scale)' : ' (left scale)') : ''} · ${esc(latestTxt)}</span>`;
+  }).join('') + `<span style="margin-left:auto;">${span}</span></div>`;
   $('trendChart').innerHTML = html;
 }
+$('trendFrame').addEventListener('click', e => {
+  const b = e.target.closest('[data-tframe]');
+  if (!b || b.disabled) return;
+  try { localStorage.setItem(TREND_FRAME_KEY, b.dataset.tframe); } catch (err) {}
+  renderTrend();
+});
 $('trendSeries').addEventListener('click', e => {
   const b = e.target.closest('[data-series]');
   if (!b) return;
@@ -2420,14 +2527,14 @@ $('trendSeries').addEventListener('click', e => {
   if (cur.has(b.dataset.series)) cur.delete(b.dataset.series); else cur.add(b.dataset.series);
   const ordered = TREND_SERIES.map(s => s.key).filter(k => cur.has(k));
   try { localStorage.setItem(TREND_KEY, JSON.stringify(ordered)); } catch (err) {}
-  renderTrend(loadLog());
+  renderTrend();
 });
 let trendResizeTimer = null, trendLastWidth = 0;
 window.addEventListener('resize', () => {
   clearTimeout(trendResizeTimer);
   trendResizeTimer = setTimeout(() => {
     const w = $('trendChart').clientWidth;
-    if (w && Math.abs(w - trendLastWidth) > 20){ trendLastWidth = w; renderTrend(loadLog()); }
+    if (w && Math.abs(w - trendLastWidth) > 20){ trendLastWidth = w; renderTrend(); }
   }, 150);
 });
 
