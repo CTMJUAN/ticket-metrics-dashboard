@@ -7,7 +7,7 @@
      files in the folder you choose. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- Ticket Portal 1.0 — one page for the ticket logs: the Ticket Metrics Dashboard (v3.6) and the
+<!-- Ticket Portal 1.1 — one page for the ticket logs: the Ticket Metrics Dashboard (v3.6) and the
      Ticket Tracker Admin (v1.0), sharing one folder connection, one theme and one set of tabs.
      Wording: search for EDIT LABELS HERE in the script below. -->
 <title>Ticket Portal</title>
@@ -1052,16 +1052,18 @@ function AdminModule(){
   const STATUS_OF = {ticket_created:'running', ticket_started:'running', ticket_resumed:'running', ticket_paused:'paused', ticket_auto_paused:'paused', ticket_finished:'finished', ticket_deleted:'removed', ticket_removed_by_admin:'deleted'};
   async function readText(entry){ return await (await entry.getFile()).text(); }
   // one load at a time: the Dashboard's background refreshes and the admin's own share it
-  let loadingP = null;
+  let loadingP = null, loadingDir = null, corrGen = 0;
   function loadAll(opts){
     if(!dir) return Promise.resolve();
-    if(loadingP) return loadingP;
-    loadingP = doLoadAll(opts || {}).finally(()=>{ loadingP = null; });
+    if(loadingP && loadingDir === dir) return loadingP;
+    if(loadingP){ const again = ()=> loadAll(opts); return loadingP.then(again, again); }   // a different folder: load it after
+    loadingDir = dir;
+    loadingP = doLoadAll(opts || {}).finally(()=>{ loadingP = null; loadingDir = null; });
     return loadingP;
   }
   async function doLoadAll(opts){
     const t0 = performance.now();
-    const d = dir;
+    const d = dir, gen0 = corrGen;
     const logFiles = [], stateFiles = [];
     let adminEntry = null;
     for await (const [name, entry] of d.entries()){
@@ -1110,11 +1112,13 @@ function AdminModule(){
       }catch(e){}
     }
     // corrections
-    corrections = emptyCorrections();
+    let loadedCorr = emptyCorrections();
     if(adminEntry){
-      try{ corrections = normalizeCorrections(JSON.parse(await readText(adminEntry))); }
+      try{ loadedCorr = normalizeCorrections(JSON.parse(await readText(adminEntry))); }
       catch(e){ showBanner('Couldn’t read ticket-admin-corrections.json (it may be syncing). Your edits are not shown until you refresh.', true); }
     }
+    // a save during this load re-read the file itself and is newer than what this load read
+    if(corrGen === gen0) corrections = loadedCorr;
     if(dir !== d) return;   // the folder changed while this was reading
     adminReady = true;
     build();
@@ -1275,7 +1279,7 @@ function AdminModule(){
         await w.write(JSON.stringify(fresh, null, 1));
         await w.close();
       }catch(e){ throw folderError(e); }
-      corrections = fresh;
+      corrections = fresh; corrGen++;
     }));
     return saveChain.then(()=>{ build(); renderAll(); scheduleExports(); }, e=>{ saveChain = Promise.resolve(); showBanner(e.message || String(e), true); throw e; });
   }
@@ -1300,8 +1304,12 @@ function AdminModule(){
   // spreadsheet formula guard) — what the Dashboard counts when its metrics come from admin-corrected tickets.
   function ticketRecord(t){
     const c = t.cur;
-    return [t.agentId || '', t.ticketId, c.customerName || '', c.category || '', c.complaint || '', t.display === 'added' ? 'Finished' : statusText(t),   // 'added' is in the Source column
-      c.startedAt ? new Date(c.startedAt).toISOString() : '', c.finishedAt ? new Date(c.finishedAt).toISOString() : '',
+    // 'added' is in the Source column. A ticket the agent removed that the admin chose to include in reports counts
+    // like a finished one (as it does in the admin totals), dated when it finished — or when the agent removed it.
+    const included = t.display === 'removed' && counted(t);
+    const fin = c.finishedAt || (included ? (t.L.lastActivity || c.startedAt) : 0);
+    return [t.agentId || '', t.ticketId, c.customerName || '', c.category || '', c.complaint || '', (t.display === 'added' || included) ? 'Finished' : statusText(t),
+      c.startedAt ? new Date(c.startedAt).toISOString() : '', fin ? new Date(fin).toISOString() : '',
       fmtDur(c.totalMs), (c.totalMs / 60000).toFixed(1), c.competency ?? '', t.flags.edited ? 'Yes' : '', t.flags.added ? 'Added by admin' : 'Tracker'];
   }
   function correctedRecords(){
@@ -1868,7 +1876,9 @@ function AdminModule(){
   return {
     show: showTab,
     refresh,
-    reload: ()=> dir ? loadAll({background: true}).catch(loadFailed) : Promise.resolve(),
+    // the Dashboard's background refresh; skipped while you're editing a ticket or a PIN (the original page never
+    // reloaded under an open dialog), so the Dashboard keeps the data it has until the dialog closes
+    reload: ()=> (!dir || $('editor').open || $('pin-dialog').open) ? Promise.resolve() : loadAll({background: true}).catch(loadFailed),
     ready: ()=> !!dir && adminReady,
     version: ()=> adminVersion,
     records: correctedRecords
@@ -3520,7 +3530,7 @@ $('output').addEventListener('click', e => {
 
 function render(){
   const has = anyColsPresent(rows);
-  const agents = new Set(), customers = new Set(), statuses = {}, complaints = {};
+  const agents = new Set(), customers = new Set(), statuses = Object.create(null), complaints = Object.create(null);
   let totalSec = 0;
   const days = new Map(); // "2026-10-09" → { tickets, customers:Set, agents:Set, sec }
   let firstMs = Infinity, lastMs = -Infinity, undated = 0;
@@ -3679,7 +3689,7 @@ function render(){
       </div></div><div class="chartWrap" id="complaintBody"></div></div>`);
   }
   if (has.customer){
-    const custCounts = {};
+    const custCounts = Object.create(null);
     rows.forEach(r => {
       const rc = rowCols(r);
       const c = val(r, rc.customer) || '(blank)';
