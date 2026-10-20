@@ -1216,6 +1216,7 @@ function AdminModule(){
     const c = t.corr, L = t.L;
     t.cur = Object.assign({}, L);
     t.flags = {added:false, deleted:false, edited:false, overridden:[], removedByAgent: L.status === 'removed'};
+    t.timeApplied = false;
     if(c){
       const at = Date.parse(c.editedAt) || 0;
       const f = c.fields || {};
@@ -1229,19 +1230,25 @@ function AdminModule(){
         t.cur[k] = want;
       }
       const tAt = Date.parse(c.timeEditedAt);
-      if(Number.isFinite(c.totalMs) && !isNaN(tAt)){
-        const applied = (t.live && t.live.adminTimeVersion && Date.parse(t.live.adminTimeVersion) >= tAt) ||
+      if((Number.isFinite(c.deltaMs) || Number.isFinite(c.totalMs)) && !isNaN(tAt)){
+        t.timeApplied = (t.live && t.live.adminTimeVersion && Date.parse(t.live.adminTimeVersion) >= tAt) ||
                         t.events.some(e => e.event === 'admin_correction_applied' && e.tsMs >= tAt);
-        if(!applied){
-          const lt = t.live;
-          const since = lt && lt.status === 'running' ? Math.max(0, now - Math.max(tAt, lt.lastResumeAt || 0)) : 0;
-          t.cur.totalMs = c.totalMs + since;
+        if(!t.timeApplied){
+          if(hasDelta(c)){
+            // The agent's tracker (v4.12+) adds the difference to whatever it has by then.
+            t.cur.totalMs = Math.max(0, L.totalMs + c.deltaMs);
+          }else{
+            // Saved by an older admin page: the total as of that save.
+            const lt = t.live;
+            const since = lt && lt.status === 'running' ? Math.max(0, now - Math.max(tAt, lt.lastResumeAt || 0)) : 0;
+            t.cur.totalMs = c.totalMs + since;
+          }
         }
       }
       if(c.deleted === true) t.flags.deleted = true;
       if(t.flags.removedByAgent && c.restored === true) t.flags.removedByAgent = false;
       const o = c.original || {};
-      t.flags.edited = adminFields(t).some(k => k in o && !same(k, o[k], t.cur[k]));
+      t.flags.edited = adminFields(t).some(k => k === 'totalMs' && hasDelta(c) && Number.isFinite(c.adjustMs) ? !same(k, c.adjustMs, 0) : (k in o && !same(k, o[k], t.cur[k])));
     }
     t.display = t.flags.deleted ? 'deleted' : L.status === 'removed' ? 'removed' : t.cur.status;
   }
@@ -1249,8 +1256,36 @@ function AdminModule(){
   function adminFields(t){
     const c = t.corr; if(!c) return [];
     const ks = Object.keys(c.fields || {}).filter(k => k in FIELD_EVENTS && !t.flags.overridden.includes(k));
-    if(Number.isFinite(c.totalMs)) ks.push('totalMs');
+    if(Number.isFinite(c.totalMs) || Number.isFinite(c.deltaMs)) ks.push('totalMs');
     return ks;
+  }
+  // Whether the time difference belongs to the latest time edit. An admin page from before the
+  // difference existed (or the Ticket Portal before 1.2) changes only totalMs and timeEditedAt, which
+  // leaves an older difference behind; that edit is then a plain total, as those pages meant it.
+  function hasDelta(c){ return !!c && Number.isFinite(c.deltaMs) && typeof c.deltaAt === 'string' && c.deltaAt === c.timeEditedAt; }
+  // The agent's own tracker total right now, including any admin change it has already applied.
+  function agentNowMs(t){
+    const lt = t.live;
+    if(lt && lt.status === 'running' && lt.lastResumeAt) return (Number(lt.accumulatedMs) || 0) + Math.max(0, Date.now() - lt.lastResumeAt);
+    return t.L.totalMs;
+  }
+  // How much of the admin's time changes the agent's tracker already carries.
+  function appliedAdjustMs(t){
+    const c = t.corr;
+    if(!hasDelta(c) || !Number.isFinite(c.adjustMs)) return 0;
+    return c.adjustMs - (t.timeApplied ? 0 : (c.deltaMs || 0));
+  }
+  // Time edits are stored as a difference from the agent's own total, so time the agent works
+  // before their tracker picks the edit up still counts. totalMs is for trackers before v4.11.
+  function setTime(e, t, totalMs, now){
+    e.deltaMs = totalMs - agentNowMs(t);
+    e.adjustMs = appliedAdjustMs(t) + e.deltaMs;
+    e.totalMs = totalMs;
+    e.timeEditedAt = e.deltaAt = now;
+  }
+  // The total without any admin time changes, or null for edits from an older admin page.
+  function agentOwnMs(t){
+    return hasDelta(t.corr) && Number.isFinite(t.corr.adjustMs) ? Math.max(0, agentNowMs(t) - appliedAdjustMs(t)) : null;
   }
   function same(k, a, b){
     if(k === 'totalMs') return Math.floor((a || 0) / 1000) === Math.floor((b || 0) / 1000);
@@ -1562,7 +1597,10 @@ function AdminModule(){
     const c = t.cur, o = t.corr && t.corr.original ? t.corr.original : null;
     const body = $('editor-body');
     const mine = adminFields(t);
-    const origNote = k => (o && mine.includes(k) && k in o && !same(k, o[k], c[k])) ? el('div', {class:'orig'}, `Agent’s original: ${fmtVal(k, o[k])}`) : null;
+    const own = agentOwnMs(t);
+    const origNote = k => k === 'totalMs' && own != null
+      ? (mine.includes(k) && !same(k, own, c[k]) ? el('div', {class:'orig'}, `Agent’s own time: ${fmtVal(k, own)}`) : null)
+      : (o && mine.includes(k) && k in o && !same(k, o[k], c[k])) ? el('div', {class:'orig'}, `Agent’s original: ${fmtVal(k, o[k])}`) : null;
     const err = el('div', {class:'err', hidden:true});
     const live = t.live && ['running','paused'].includes(t.live.status);
     body.replaceChildren(...[
@@ -1633,7 +1671,7 @@ function AdminModule(){
           if(!e.original) e.original = {customerName: snapshot.customerName, category: snapshot.category, complaint: snapshot.complaint, competency: snapshot.competency, totalMs: snapshot.totalMs};
           e.fields = e.fields || {};
           for(const k of Object.keys(changes)){
-            if(k === 'totalMs'){ e.totalMs = v.totalMs; e.timeEditedAt = now; }
+            if(k === 'totalMs') setTime(e, t, v.totalMs, now);
             else e.fields[k] = v[k];
           }
           e.editedAt = now; e.editedBy = adminName();
@@ -1647,7 +1685,9 @@ function AdminModule(){
     const o = t.corr && t.corr.original; if(!o) return;
     const changes = {};
     const mine = adminFields(t);
-    for(const k of mine) if(k in o && !same(k, t.cur[k], o[k])) changes[k] = [t.cur[k] ?? null, o[k] ?? null];
+    const own = agentOwnMs(t);
+    const target = k => k === 'totalMs' && own != null ? own : o[k];
+    for(const k of mine) if((k in o || (k === 'totalMs' && own != null)) && !same(k, t.cur[k], target(k))) changes[k] = [t.cur[k] ?? null, target(k) ?? null];
     const now = new Date().toISOString();
     try{
       // Revert = a new edit back to the agent's values, so an open ticket in the tracker changes back too.
@@ -1656,7 +1696,7 @@ function AdminModule(){
         const f = {};
         for(const k of mine) if(k !== 'totalMs' && k in o) f[k] = k === 'competency' ? (o[k] ?? null) : (o[k] ?? '');
         e.fields = f;
-        if('totalMs' in changes){ e.totalMs = o.totalMs; e.timeEditedAt = now; }
+        if('totalMs' in changes) setTime(e, t, target('totalMs'), now);
         e.editedAt = now; e.editedBy = adminName();
       }, [audit('revert', t, changes)]);
       $('editor').close();
@@ -2655,8 +2695,11 @@ function renderTestList(hits){
   el.innerHTML = `<strong>${hits.length.toLocaleString()} test ticket(s) left out:</strong> ${esc(shown.join(' · '))}${hits.length > 8 ? ` \u2026and ${hits.length - 8} more` : ''}`;
 }
 
-// work-log event names from the tracker: ticket_started, ticket_finished, ticket_edited, competency_rated, …
-const isLogEvent = memo(v => /^(ticket|competency)_[a-z_]+$/i.test(String(v ?? '').trim()));
+// work-log event names from the tracker: ticket_started, ticket_finished, ticket_edited, competency_rated,
+// admin_correction_applied (tracker 4.10+: an admin's edit, carrying the corrected values), …
+const isLogEvent = memo(v => /^(ticket|competency|admin)_[a-z_]+$/i.test(String(v ?? '').trim()));
+// tracker 4.10+ logs ticket_removed_by_admin when an admin deletes a ticket
+const isDeletion = v => /delet|removed_by_admin/i.test(String(v ?? ''));
 const isFinished = memo(function isFinished(v){
   const s = statusLabel(v).toLowerCase(); // underscores → spaces, so "Ticket_unfinished" is still caught as unfinished
   if (/\b(un|not\s*|non-?\s*)finish/.test(s)) return false; // "Unfinished", "Not Finished"
@@ -3144,15 +3187,17 @@ function rebuild(){
     const last = latestEvent.get(ticketKey(r));
     if (!last || last.row === r){ finished.push(r); continue; }
     const lc = rowCols(last.row);
-    if (/delet/i.test(String(last.row[lc.status] ?? ''))){ deletedAfter++; continue; }
-    // copy the finished row (its time and duration stay), then bring in the latest values
+    if (isDeletion(last.row[lc.status])){ deletedAfter++; continue; }
+    // copy the finished row (its date stays), then bring in the latest values. A finished ticket's
+    // time only changes when an admin corrects it, so the latest row's elapsed time is the right one.
     const merged = Object.assign({}, r);
     ticketKeyMemo.set(merged, ticketKey(r)); // the copy is still the same ticket
     let changed = false;
-    for (const f of ['customer', 'complaint', 'category', 'rating']){
+    for (const f of ['customer', 'complaint', 'category', 'rating', 'duration']){
       if (!lc[f]) continue;
       const target = rc[f] || lc[f];
       const v = last.row[lc[f]] ?? '';
+      if (f === 'duration' && String(v).trim() === '') continue;
       if (String(merged[target] ?? '') !== String(v)){ merged[target] = v; changed = true; }
     }
     if (changed) updatedFromLog++;
@@ -3251,7 +3296,7 @@ function assignTicketKeys(raw){
         list.push(cur.start);
       }
       ticketKeyMemo.set(g.r, base + '#' + cur.start);
-      if (g.ev === 'ticket_finished' || g.ev === 'ticket_deleted') cur.closed = true;
+      if (g.ev === 'ticket_finished' || isDeletion(g.ev)) cur.closed = true;
     }
     starts.set(base, list);
   }
@@ -3283,7 +3328,9 @@ const EXPORT_STATE = memo(v => {
   return null;
 });
 // the tracker logs a new ticket as ticket_created and starts its timer at once, so a created ticket is running
-const EVENT_STATE = { ticket_created: 'running', ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_finished: 'finished', ticket_deleted: 'deleted' };
+// tracker 4.9+ logs ticket_auto_paused when it's closed with a ticket still running
+const EVENT_STATE = { ticket_created: 'running', ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_auto_paused: 'paused',
+                      ticket_finished: 'finished', ticket_deleted: 'deleted', ticket_removed_by_admin: 'deleted' };
 function collectInProgress(raw){
   const t = new Map(); // real-ticket key → ticket
   let known = false;   // any status information at all?
@@ -3371,7 +3418,7 @@ function renderFileList(){
   const notes = [];
   if (lastStats.excludedStatus) notes.push(`${lastStats.excludedStatus.toLocaleString()} non-Finished row(s) excluded`);
   if (lastStats.excludedDupes) notes.push(`${lastStats.excludedDupes.toLocaleString()} duplicate event row(s) for already-counted tickets collapsed`);
-  if (lastStats.updatedFromLog) notes.push(`${lastStats.updatedFromLog.toLocaleString()} finished ticket(s) updated with a later rating or edit from the work log`);
+  if (lastStats.updatedFromLog) notes.push(`${lastStats.updatedFromLog.toLocaleString()} finished ticket(s) updated with a later rating, edit or admin correction from the work log`);
   if (lastStats.testExcluded) notes.push(`${lastStats.testExcluded.toLocaleString()} test ticket(s) left out`);
   if (lastStats.deletedAfter) notes.push(`${lastStats.deletedAfter.toLocaleString()} ticket(s) left out because they were deleted after finishing`);
   if (notes.length) txt += ` <span>(${notes.join('; ')})</span>`;

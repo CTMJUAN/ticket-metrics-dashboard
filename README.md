@@ -9,7 +9,8 @@ A single-file HTML dashboard for ticket export CSVs. Open `ticket-dashboard.html
 - Light and dark themes
 
 ## Ticket Portal (dashboard + admin in one page)
-`ticket-portal.html` combines this dashboard (v3.6) with the Ticket Tracker admin page (`ticket-admin.html` v1.0 from Ticket-Time-Tracker) — every feature of both, in one file with one set of tabs: **Dashboard · Admin: Tickets · Summary · Agents · Change history**.
+`ticket-portal.html` combines this dashboard (v3.7) with the Ticket Tracker admin page (`ticket-admin.html` from Ticket-Time-Tracker, with tracker v4.12's time corrections) — every feature of both, in one file with one set of tabs: **Dashboard · Admin: Tickets · Summary · Agents · Change history**.
+- Portal 1.2: admin time edits are saved as a difference, so time agents work before their tracker picks an edit up still counts (agents need tracker 4.12; older portals and admin pages should be replaced, since their time edits can be misread by tracker 4.11); the dashboard reads tracker 4.9/4.10 events (auto-paused, removed by admin, admin corrections) when it reads the work logs directly
 - One shared-folder connection for both (allow editing when the browser asks, so admin corrections can be saved); the folder each separate page remembered is picked up automatically, as are the metrics log, complaint groups, snapshot schedule, theme and admin name
 - Dashboard metrics use the admin-corrected tickets by default (edits, deletions, restored and added tickets count straight away); switch in Settings → *Dashboard Metrics From* → *Raw files, as they are*
 - The admin's own export files (`ticket-admin-*.csv`) are skipped by the dashboard so no ticket is counted twice
