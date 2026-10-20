@@ -16,6 +16,7 @@ Each version is one commit on `main` whose message starts with its version numbe
 
 | Version | Changes |
 |---|---|
+| 3.7 | Tracker 4.9/4.10 work-log events: auto-paused tickets show as paused in In Progress, tickets an admin deleted are left out, and admin corrections (customer, complaint, category, rating and time) update finished tickets |
 | 3.6 | Daily/Cumulative switch now covers all five summary cards (agents and avg time per ticket too); Metrics over time gets Daily / Weekly / Monthly / Cumulative views from the ticket data, plus Snapshots |
 | 3.5 | Fix: ticket numbers reused by the tracker on different days are now separate tickets (each ticket_created starts a new one), so Daily shows today and In Progress counts today's paused/running tickets |
 | 3.4 | Top 5 Complaints: chart shows the top 5 (category or type), with Show all to expand a full ranked list with counts and shares |

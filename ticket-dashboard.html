@@ -1177,8 +1177,11 @@ function renderTestList(hits){
   el.innerHTML = `<strong>${hits.length.toLocaleString()} test ticket(s) left out:</strong> ${esc(shown.join(' · '))}${hits.length > 8 ? ` \u2026and ${hits.length - 8} more` : ''}`;
 }
 
-// work-log event names from the tracker: ticket_started, ticket_finished, ticket_edited, competency_rated, …
-const isLogEvent = memo(v => /^(ticket|competency)_[a-z_]+$/i.test(String(v ?? '').trim()));
+// work-log event names from the tracker: ticket_started, ticket_finished, ticket_edited, competency_rated,
+// admin_correction_applied (tracker 4.10+: an admin's edit, carrying the corrected values), …
+const isLogEvent = memo(v => /^(ticket|competency|admin)_[a-z_]+$/i.test(String(v ?? '').trim()));
+// tracker 4.10+ logs ticket_removed_by_admin when an admin deletes a ticket
+const isDeletion = v => /delet|removed_by_admin/i.test(String(v ?? ''));
 const isFinished = memo(function isFinished(v){
   const s = statusLabel(v).toLowerCase(); // underscores → spaces, so "Ticket_unfinished" is still caught as unfinished
   if (/\b(un|not\s*|non-?\s*)finish/.test(s)) return false; // "Unfinished", "Not Finished"
@@ -1665,15 +1668,17 @@ function rebuild(){
     const last = latestEvent.get(ticketKey(r));
     if (!last || last.row === r){ finished.push(r); continue; }
     const lc = rowCols(last.row);
-    if (/delet/i.test(String(last.row[lc.status] ?? ''))){ deletedAfter++; continue; }
-    // copy the finished row (its time and duration stay), then bring in the latest values
+    if (isDeletion(last.row[lc.status])){ deletedAfter++; continue; }
+    // copy the finished row (its date stays), then bring in the latest values. A finished ticket's
+    // time only changes when an admin corrects it, so the latest row's elapsed time is the right one.
     const merged = Object.assign({}, r);
     ticketKeyMemo.set(merged, ticketKey(r)); // the copy is still the same ticket
     let changed = false;
-    for (const f of ['customer', 'complaint', 'category', 'rating']){
+    for (const f of ['customer', 'complaint', 'category', 'rating', 'duration']){
       if (!lc[f]) continue;
       const target = rc[f] || lc[f];
       const v = last.row[lc[f]] ?? '';
+      if (f === 'duration' && String(v).trim() === '') continue;
       if (String(merged[target] ?? '') !== String(v)){ merged[target] = v; changed = true; }
     }
     if (changed) updatedFromLog++;
@@ -1772,7 +1777,7 @@ function assignTicketKeys(raw){
         list.push(cur.start);
       }
       ticketKeyMemo.set(g.r, base + '#' + cur.start);
-      if (g.ev === 'ticket_finished' || g.ev === 'ticket_deleted') cur.closed = true;
+      if (g.ev === 'ticket_finished' || isDeletion(g.ev)) cur.closed = true;
     }
     starts.set(base, list);
   }
@@ -1804,7 +1809,9 @@ const EXPORT_STATE = memo(v => {
   return null;
 });
 // the tracker logs a new ticket as ticket_created and starts its timer at once, so a created ticket is running
-const EVENT_STATE = { ticket_created: 'running', ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_finished: 'finished', ticket_deleted: 'deleted' };
+// tracker 4.9+ logs ticket_auto_paused when it's closed with a ticket still running
+const EVENT_STATE = { ticket_created: 'running', ticket_started: 'running', ticket_resumed: 'running', ticket_paused: 'paused', ticket_auto_paused: 'paused',
+                      ticket_finished: 'finished', ticket_deleted: 'deleted', ticket_removed_by_admin: 'deleted' };
 function collectInProgress(raw){
   const t = new Map(); // real-ticket key → ticket
   let known = false;   // any status information at all?
@@ -1892,7 +1899,7 @@ function renderFileList(){
   const notes = [];
   if (lastStats.excludedStatus) notes.push(`${lastStats.excludedStatus.toLocaleString()} non-Finished row(s) excluded`);
   if (lastStats.excludedDupes) notes.push(`${lastStats.excludedDupes.toLocaleString()} duplicate event row(s) for already-counted tickets collapsed`);
-  if (lastStats.updatedFromLog) notes.push(`${lastStats.updatedFromLog.toLocaleString()} finished ticket(s) updated with a later rating or edit from the work log`);
+  if (lastStats.updatedFromLog) notes.push(`${lastStats.updatedFromLog.toLocaleString()} finished ticket(s) updated with a later rating, edit or admin correction from the work log`);
   if (lastStats.testExcluded) notes.push(`${lastStats.testExcluded.toLocaleString()} test ticket(s) left out`);
   if (lastStats.deletedAfter) notes.push(`${lastStats.deletedAfter.toLocaleString()} ticket(s) left out because they were deleted after finishing`);
   if (notes.length) txt += ` <span>(${notes.join('; ')})</span>`;
