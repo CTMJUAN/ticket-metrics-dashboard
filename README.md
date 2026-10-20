@@ -8,6 +8,13 @@ A single-file HTML dashboard for ticket export CSVs. Open `ticket-dashboard.html
 - Metrics log with manual and scheduled automatic snapshots, exportable as CSV and importable from other browsers/computers; graph with selectable lines
 - Light and dark themes
 
+## Ticket Portal (dashboard + admin in one page)
+`ticket-portal.html` combines this dashboard (v3.6) with the Ticket Tracker admin page (`ticket-admin.html` v1.0 from Ticket-Time-Tracker) — every feature of both, in one file with one set of tabs: **Dashboard · Admin: Tickets · Summary · Agents · Change history**.
+- One shared-folder connection for both (allow editing when the browser asks, so admin corrections can be saved); the folder each separate page remembered is picked up automatically, as are the metrics log, complaint groups, snapshot schedule, theme and admin name
+- Dashboard metrics use the admin-corrected tickets by default (edits, deletions, restored and added tickets count straight away); switch in Settings → *Dashboard Metrics From* → *Raw files, as they are*
+- The admin's own export files (`ticket-admin-*.csv`) are skipped by the dashboard so no ticket is counted twice
+- Wording for both views is in the same **EDIT LABELS HERE** list
+
 ## Changing labels
 Open `ticket-dashboard.html` in a text editor and search for **EDIT LABELS HERE** (near the top of the script). Every heading, card label, column header, chart title and button label is listed there; change only the text inside the quotes, save, and reload the page.
 
