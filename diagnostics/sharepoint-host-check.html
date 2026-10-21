@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SharePoint HTML Hosting Capability Check</title>
+<style>
+body{font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#17202a}
+h1{font-size:1.45rem}li{margin:.6rem 0}.status{padding:12px;border:1px solid #ccd3da;border-radius:8px;margin:12px 0;overflow-wrap:anywhere}
+.ok{border-color:#287d4b}.warn{border-color:#a56a00}.bad{border-color:#b42318}code{overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<h1>SharePoint HTML Hosting Capability Check</h1>
+<p>This diagnostic performs only a read-only request to the current SharePoint site's <code>/_api/web/currentuser</code> endpoint. It does not create or modify data, send information to external services, or require OneDrive sync.</p>
+<p><strong>Interpretation:</strong> If this file downloads instead of displaying a page, the library is not serving it as an interactive HTML application. If JavaScript runs but the request fails, the current hosting/security policy does not provide the API access this integration needs.</p>
+<div id="js" class="status warn">Checking whether inline JavaScript executed…</div>
+<div id="origin" class="status">Checking page origin…</div>
+<div id="api" class="status warn">Checking same-site SharePoint REST read access…</div>
+<script>
+(function () {
+  var js = document.getElementById('js');
+  var origin = document.getElementById('origin');
+  var api = document.getElementById('api');
+  function show(el, cls, message) { el.className = 'status ' + cls; el.textContent = message; }
+  show(js, 'ok', 'PASS: inline JavaScript executed.');
+  show(origin, location.origin && location.origin !== 'null' ? 'ok' : 'bad',
+       'Page origin: ' + (location.origin || 'opaque / null') + '.');
+  if (!location.origin || location.origin === 'null' || !/^https?:$/.test(location.protocol)) {
+    show(api, 'bad', 'BLOCKED: this document does not have a normal HTTP(S) site origin. A shared SharePoint REST adapter cannot be validated here.');
+    return;
+  }
+  var endpoint = location.origin + '/_api/web/currentuser?$select=Title,Email';
+  fetch(endpoint, { method: 'GET', credentials: 'same-origin', headers: { 'Accept': 'application/json;odata=nometadata' } })
+    .then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status + ' ' + response.statusText);
+      return response.json();
+    })
+    .then(function (data) {
+      var user = data && data.Title ? data.Title : '(name not returned)';
+      show(api, 'ok', 'PASS: same-site SharePoint REST read succeeded for the signed-in session. Current user: ' + user + '. This confirms only a read endpoint; list permissions and write behavior still need separate tests.');
+    })
+    .catch(function (error) {
+      show(api, 'bad', 'FAIL: same-site SharePoint REST read did not succeed (' + String(error && error.message || error) + '). This may be due to sandboxing, browser policy, authentication context, or site permissions. Do not work around the restriction; use an approved app host.');
+    });
+}());
+</script>
+</body>
+</html>
