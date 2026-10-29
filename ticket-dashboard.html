@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Ticket Metrics Dashboard</title>
+<title>Distance Support Metrics</title>
 <style>
 :root{
   --bg:#f7f8fa; --card:#ffffff; --text:#1a1d23; --sub:#5b6270;
@@ -166,7 +166,7 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
 </head>
 <body>
 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-  <h1 id="pageHeading">🎫 Ticket Metrics Dashboard</h1>
+  <h1 id="pageHeading">🎫 Distance Support Metrics</h1>
   <button id="settingsBtn" class="btnGhost" style="margin-top:8px;" data-label="settingsButton">⚙ Settings</button>
 </div>
 <p id="dataSourceSummary" class="sub"></p>
@@ -299,7 +299,7 @@ svg .grid-line{stroke:var(--border);stroke-width:1;}
    ╚═══════════════════════════════════════════════════════════════════════════╝ */
 const LABELS = {
   // ── Page ───────────────────────────────────────────────────────────────────
-  pageTitle:            'Ticket Metrics Dashboard',     // page heading and browser tab
+  pageTitle:            'Distance Support Metrics',     // page heading and browser tab
   pageIcon:             '🎫',                            // shown before the page heading ('' for none)
   settingsButton:       '⚙ Settings',
 
@@ -344,13 +344,9 @@ const LABELS = {
   hoursAxis:            'Hours',                         // title over the right-hand scale
   countAxis:            'Count',                         // left scale title when several count lines are shown
 
-  // ── Per-agent breakdown table ──────────────────────────────────────────────
-  agentsTitle:          'Per-Agent Breakdown',
-  colAgent:             'Agent',
-  colTickets:           'Tickets',                       // also used in the per-customer table
-  colUniqueCustomers:   'Unique Customers',
-  colTotalHours:        'Total Hours',                   // also used in the per-customer table
-  colAvgTime:           'Avg Time / Ticket',
+  // ── Table columns ──────────────────────────────────────────────────────────
+  colTickets:           'Tickets',
+  colTotalHours:        'Total Hours',
 
   // ── Per-customer breakdown table ───────────────────────────────────────────
   customersTitle:       'Per-Customer Breakdown',
@@ -2086,28 +2082,8 @@ function render(){
           avgSec: totalSec / rows.length, days, dayKeys: [...days.keys()].sort(), firstMs, lastMs, undated };
   let html = '<div id="kpiArea"></div>';
 
-  // per-agent and per-customer tables go below the Metrics over time graph
+  // per-customer table goes below the Metrics over time graph
   let tables = '';
-  if (has.agent){
-    tables += `<div class="section"><h2>${esc(L.agentsTitle)}</h2><div class="tableWrap"><table><thead><tr>`;
-    tables += `<th>${esc(L.colAgent)}</th><th>${esc(L.colTickets)}</th><th>${esc(L.colUniqueCustomers)}</th><th>${esc(L.colTotalHours)}</th><th>${esc(L.colAvgTime)}</th></tr></thead><tbody>`;
-    const agentStats = new Map();
-    rows.forEach(r => {
-      const rc = rowCols(r);
-      const a = val(r, rc.agent) || '(blank)';
-      if (!agentStats.has(a)) agentStats.set(a, { tickets:0, customers:new Set(), sec:0 });
-      const s = agentStats.get(a);
-      s.tickets++;
-      const cu = val(r, rc.customer);
-      if (cu) s.customers.add(cu);
-      s.sec += dur(r);
-    });
-    [...agentStats].sort((a,b)=>b[1].sec-a[1].sec || b[1].tickets-a[1].tickets).forEach(([agent,s]) => {
-      tables += `<tr><td>${esc(agent)}</td><td>${s.tickets}</td><td>${s.customers.size}</td><td>${secondsToHours(s.sec)}</td><td>${secondsToHms(s.sec/s.tickets)}</td></tr>`;
-    });
-    tables += '</tbody></table></div></div>';
-  }
-
   if (has.customer){
     // one row per customer; the row list is kept so the pager can redraw just this table
     let badRatings = 0;
